@@ -1,12 +1,19 @@
 use super::{Dfa, StateId, StateSet};
+use crate::lex::TokenType;
 use std::collections::HashMap;
 
 pub type NfaTransition = Option<u8>;
 
 #[derive(Default, Debug, Clone)]
 pub struct NfaState {
-    pub is_accepting: bool,
+    pub token_type: Option<TokenType>,
     pub transitions: Vec<(NfaTransition, StateId)>,
+}
+
+impl NfaState {
+    pub fn is_accepting(&self) -> bool {
+        self.token_type.is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -23,9 +30,9 @@ impl Nfa {
         }
     }
 
-    pub fn add_state(&mut self, is_accepting: bool) -> StateId {
+    pub fn add_state(&mut self, token_type: Option<TokenType>) -> StateId {
         let state = NfaState {
-            is_accepting,
+            token_type,
             transitions: Vec::new(),
         };
 
@@ -75,17 +82,63 @@ impl Nfa {
         next_set
     }
 
+    pub fn merge(nfas: &[Nfa]) -> Nfa {
+        if nfas.is_empty() {
+            return Nfa::new();
+        }
+
+        if nfas.len() == 1 {
+            return nfas[0].clone();
+        }
+
+        let mut merged = Nfa::new();
+        let mut old_to_new_mappings = Vec::new();
+
+        // Copy all states from each NFA, keeping track of state ID mappings
+        for nfa in nfas {
+            let mut mapping = HashMap::new();
+
+            for (old_id, state) in nfa.states.iter().enumerate() {
+                let new_id = merged.add_state(state.token_type.clone());
+                mapping.insert(old_id, new_id);
+            }
+
+            old_to_new_mappings.push(mapping);
+        }
+
+        // Copy all transitions using the new state IDs
+        for (nfa_idx, nfa) in nfas.iter().enumerate() {
+            let mapping = &old_to_new_mappings[nfa_idx];
+
+            for (old_from, state) in nfa.states.iter().enumerate() {
+                let new_from = mapping[&old_from];
+
+                for (transition, old_to) in &state.transitions {
+                    let new_to = mapping[old_to];
+                    merged.add_transition(new_from, new_to, *transition);
+                }
+            }
+        }
+
+        // Add epsilon transitions from the new start state to each NFA's start state
+        for (nfa_idx, nfa) in nfas.iter().enumerate() {
+            let mapping = &old_to_new_mappings[nfa_idx];
+            let new_start = mapping[&nfa.start_state];
+            merged.add_transition(merged.start_state, new_start, None);
+        }
+
+        merged
+    }
+
     pub fn to_dfa(&self) -> Dfa {
         let mut dfa = Dfa::new();
         let mut state_map: HashMap<StateSet, StateId> = HashMap::new();
         let mut worklist: Vec<StateSet> = Vec::new();
 
         let start_closure: StateSet = self.epsilon_closure(&StateSet::from([self.start_state]));
-        let start_is_accepting = start_closure
-            .iter()
-            .any(|&id| self.states.get(id).is_some_and(|s| s.is_accepting));
-
-        dfa.states[0].is_accepting = start_is_accepting;
+        // For the start state, we don't have a token type (it's non-accepting)
+        // The start state will have token_type = None
+        dfa.states[0].token_type = None;
         state_map.insert(start_closure.clone(), 0);
         worklist.push(start_closure);
 
@@ -102,11 +155,12 @@ impl Nfa {
                     {
                         existing_state
                     } else {
-                        let is_accepting = next_closure
+                        // Find the token type for this closure - prioritize the first accepting state we find
+                        let token_type = next_closure
                             .iter()
-                            .any(|&id| self.states.get(id).is_some_and(|s| s.is_accepting));
+                            .find_map(|&id| self.states.get(id)?.token_type.clone());
 
-                        let new_state = dfa.add_state(is_accepting);
+                        let new_state = dfa.add_state(token_type);
                         state_map.insert(next_closure.clone(), new_state);
                         worklist.push(next_closure.clone());
                         new_state
@@ -126,32 +180,144 @@ impl Nfa {
         dot.push_str("  node [shape=circle];\n");
 
         for (state_id, state) in self.states.iter().enumerate() {
-            if state.is_accepting {
-                dot.push_str(&format!("  {state_id} [shape=doublecircle];\n"));
+            if state.is_accepting() {
+                let token_label = state
+                    .token_type
+                    .as_ref()
+                    .map(|t| format!("{t:?}"))
+                    .unwrap_or("Unknown".into())
+                    .replace('"', "\\\"");
+                dot.push_str(&format!(
+                    "  {state_id} [shape=doublecircle, label=\"{token_label}\"];\n"
+                ));
             }
         }
 
         dot.push_str("  start [shape=point, style=invis];\n");
         dot.push_str(&format!("  start -> {};\n", self.start_state));
 
+        // Group transitions by (from_state, to_state) pairs
+        let mut transitions: HashMap<(usize, usize), Vec<Option<u8>>> = HashMap::new();
+
         for (from_state, state) in self.states.iter().enumerate() {
             for (transition, to_state) in &state.transitions {
-                let label = match transition {
-                    Some(byte) => {
-                        if byte.is_ascii_graphic() && *byte != b'"' && *byte != b'\\' {
-                            format!("\"{}\"", *byte as char)
-                        } else {
-                            format!("\"\\\\x{byte:02x}\"")
-                        }
-                    }
-                    None => "\"ε\"".to_string(),
-                };
-                dot.push_str(&format!("  {from_state} -> {to_state} [label={label}];\n"));
+                transitions
+                    .entry((from_state, *to_state))
+                    .or_default()
+                    .push(*transition);
             }
+        }
+
+        // Generate consolidated edges
+        for ((from_state, to_state), inputs) in transitions {
+            let label = self.format_nfa_transition_label(&inputs);
+            dot.push_str(&format!(
+                "  {from_state} -> {to_state} [label=\"{label}\"];\n"
+            ));
         }
 
         dot.push_str("}\n");
         dot
+    }
+
+    fn format_nfa_transition_label(&self, inputs: &[Option<u8>]) -> String {
+        if inputs.len() == 1 {
+            match inputs[0] {
+                Some(byte) => {
+                    if byte.is_ascii_graphic() && byte != b'"' && byte != b'\\' {
+                        (byte as char).to_string()
+                    } else {
+                        format!("\\\\x{byte:02x}")
+                    }
+                }
+                None => "ε".to_string(),
+            }
+        } else {
+            // Separate epsilon transitions from character transitions
+            let mut epsilons = Vec::new();
+            let mut chars = Vec::new();
+
+            for &input in inputs {
+                match input {
+                    Some(byte) => chars.push(byte),
+                    None => epsilons.push(()),
+                }
+            }
+
+            let mut parts = Vec::new();
+
+            if !epsilons.is_empty() {
+                if epsilons.len() == 1 {
+                    parts.push("ε".to_string());
+                } else {
+                    parts.push(format!("ε({})", epsilons.len()));
+                }
+            }
+
+            if !chars.is_empty() {
+                // Group consecutive ranges and individual characters for regular chars
+                chars.sort_unstable();
+
+                let mut result = String::new();
+                let mut i = 0;
+
+                while i < chars.len() {
+                    let start = chars[i];
+                    let mut end = start;
+
+                    // Find consecutive range
+                    while i + 1 < chars.len() && chars[i + 1] == end + 1 {
+                        i += 1;
+                        end = chars[i];
+                    }
+
+                    if !result.is_empty() {
+                        result.push(',');
+                    }
+
+                    if start == end {
+                        // Single character
+                        if start.is_ascii_graphic() && start != b'"' && start != b'\\' {
+                            result.push(start as char);
+                        } else {
+                            result.push_str(&format!("\\\\x{start:02x}"));
+                        }
+                    } else if end == start + 1 {
+                        // Two consecutive characters, show individually
+                        if start.is_ascii_graphic() && start != b'"' && start != b'\\' {
+                            result.push(start as char);
+                        } else {
+                            result.push_str(&format!("\\\\x{start:02x}"));
+                        }
+                        result.push(',');
+                        if end.is_ascii_graphic() && end != b'"' && end != b'\\' {
+                            result.push(end as char);
+                        } else {
+                            result.push_str(&format!("\\\\x{end:02x}"));
+                        }
+                    } else {
+                        // Range of 3 or more characters
+                        if start.is_ascii_graphic()
+                            && start != b'"'
+                            && start != b'\\'
+                            && end.is_ascii_graphic()
+                            && end != b'"'
+                            && end != b'\\'
+                        {
+                            result.push_str(&format!("{}-{}", start as char, end as char));
+                        } else {
+                            result.push_str(&format!("\\\\x{start:02x}-\\\\x{end:02x}"));
+                        }
+                    }
+
+                    i += 1;
+                }
+
+                parts.push(result);
+            }
+
+            parts.join(",")
+        }
     }
 }
 

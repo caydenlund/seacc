@@ -1,24 +1,38 @@
-use seacc::lex::{RegexComponent, RegexPattern};
+use seacc::lex::{Nfa, RegexComponent, RegexPattern, TokenType};
 
 fn main() {
-    // Create an interesting regex pattern: (a|b)+abb
-    let pattern = vec![
-        RegexComponent::Repeat {
-            item: Box::new(RegexComponent::Alternation(
-                vec![RegexComponent::Literal(vec![b'a'])],
-                vec![RegexComponent::Literal(vec![b'b'])],
-            )),
-            min: 1,
-            max: None,
-        },
-        RegexComponent::Literal(vec![b'a']),
-        RegexComponent::Literal(vec![b'b']),
-        RegexComponent::Literal(vec![b'b']),
+    // Create a more comprehensive pattern that shows the issue
+    let patterns_and_tokens = [
+        // Keywords
+        (
+            vec![RegexComponent::Literal("if".bytes().collect())],
+            TokenType::If,
+        ),
+        (
+            vec![RegexComponent::Literal("else".bytes().collect())],
+            TokenType::Else,
+        ),
+        (
+            vec![RegexComponent::Literal("for".bytes().collect())],
+            TokenType::For,
+        ),
+        // Generic identifier pattern [a-z]+
+        (
+            vec![RegexComponent::Repeat {
+                item: Box::new(RegexComponent::char_range(b'a', b'z')),
+                min: 1,
+                max: None,
+            }],
+            TokenType::Identifier("generic".to_string()),
+        ),
     ];
 
-    let regex = RegexPattern::new(pattern);
-    let nfa = regex.to_nfa();
+    let nfas: Vec<Nfa> = patterns_and_tokens
+        .iter()
+        .map(|(pat, token)| RegexPattern::new(pat).to_nfa(token.clone()))
+        .collect();
 
-    println!("// Regex pattern: (a|b)+abb");
-    println!("{}", nfa.to_dfa().to_dot());
+    let nfa = Nfa::merge(&nfas);
+
+    println!("{}", nfa.to_dfa().minimize().to_dot());
 }

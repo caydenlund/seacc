@@ -1,7 +1,8 @@
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TokenType {
     Identifier(String),
     LiteralInt(i64),
-    LiteralFloat(f64),
+    LiteralFloat(u64), // Store as bits for Hash/Eq
     LiteralChar(u8),
     LiteralString(String),
 
