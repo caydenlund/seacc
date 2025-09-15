@@ -1,19 +1,20 @@
+//! lex/state-machine/dfa: Deterministic Finite Automata for lexical token patterns
+
 use super::StateId;
 use crate::lex::TokenType;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 
+/// Transition on a single byte from one DFA state to another
 pub type DfaTransition = u8;
 
+/// A single DFA state, which may accept and generate a token and has associated state transitions
 #[derive(Debug, Clone)]
 pub struct DfaState {
+    /// The token type that this state generates and accepts
     pub token_type: Option<TokenType>,
+    /// Transitions on bytes to other DFA states
     pub transitions: [Option<StateId>; 256],
-}
-
-impl DfaState {
-    pub fn is_accepting(&self) -> bool {
-        self.token_type.is_some()
-    }
 }
 
 impl Default for DfaState {
@@ -25,13 +26,18 @@ impl Default for DfaState {
     }
 }
 
+/// A Deterministic Finite Automata
 #[derive(Debug, Clone)]
 pub struct Dfa {
+    /// The contained states in this DFA
     pub states: Vec<DfaState>,
+    /// The [`StateId`] of the first state
     pub start_state: StateId,
 }
 
 impl Dfa {
+    /// Generates a default [`Dfa`] with a single (starting) state
+    #[must_use]
     pub fn new() -> Self {
         Self {
             states: vec![DfaState::default()],
@@ -39,6 +45,9 @@ impl Dfa {
         }
     }
 
+    /// Adds a new state to the DFA
+    ///
+    /// If this state is accepting, it emits the given token type
     pub fn add_state(&mut self, token_type: Option<TokenType>) -> StateId {
         let state = DfaState {
             token_type,
@@ -49,21 +58,26 @@ impl Dfa {
         self.states.len() - 1
     }
 
+    /// Adds a transition from one state to another on the given byte
     pub fn add_transition(&mut self, from: StateId, to: StateId, input: DfaTransition) {
         if let Some(state) = self.states.get_mut(from) {
             state.transitions[input as usize] = Some(to);
         }
     }
 
+    /// Returns the transition from the given state on the given byte, if any
+    #[must_use]
     pub fn transition(&self, from: StateId, input: DfaTransition) -> Option<StateId> {
         self.states
             .get(from)
             .and_then(|state| state.transitions[input as usize])
     }
 
-    pub fn minimize(&self) -> Dfa {
+    /// Returns a minimized DFA with an equivalent language
+    #[must_use]
+    pub fn minimize(&self) -> Self {
         if self.states.is_empty() {
-            return Dfa::new();
+            return Self::new();
         }
 
         // Step 1: Initial partition by token type (states with different token types cannot be merged)
@@ -99,6 +113,7 @@ impl Dfa {
         self.build_minimized_dfa(&partitions)
     }
 
+    /// Refines a partition by grouping states with identical transition signatures
     fn refine_partition(
         &self,
         partition: &HashSet<StateId>,
@@ -134,8 +149,9 @@ impl Dfa {
         groups.into_values().collect()
     }
 
-    fn build_minimized_dfa(&self, partitions: &[HashSet<StateId>]) -> Dfa {
-        let mut minimized = Dfa::new();
+    /// Builds a minimized DFA from the refined partitions
+    fn build_minimized_dfa(&self, partitions: &[HashSet<StateId>]) -> Self {
+        let mut minimized = Self::new();
         let mut state_map: HashMap<StateId, StateId> = HashMap::new();
 
         // Find which partition contains the start state
@@ -179,32 +195,35 @@ impl Dfa {
         minimized
     }
 
+    /// Builds a Graphviz DOT graph of this DFA
+    #[must_use]
     pub fn to_dot(&self) -> String {
         let mut dot = String::from("digraph DFA {\n");
         dot.push_str("  rankdir=LR;\n");
         dot.push_str("  node [shape=circle];\n");
 
         for (state_id, state) in self.states.iter().enumerate() {
-            if state.is_accepting() {
+            if state.token_type.is_some() {
                 let token_label = state
                     .token_type
                     .as_ref()
-                    .map(|t| format!("{t:?}"))
-                    .unwrap_or("Unknown".to_string())
+                    .map_or("Unknown".to_string(), |t| format!("{t:?}"))
                     .replace('"', "\\\"");
-                dot.push_str(&format!(
-                    "  {state_id} [shape=doublecircle, label=\"{token_label}\"];\n"
-                ));
+                let _ = writeln!(
+                    dot,
+                    "  {state_id} [shape=doublecircle, label=\"{token_label}\"];"
+                );
             }
         }
 
         dot.push_str("  start [shape=point, style=invis];\n");
-        dot.push_str(&format!("  start -> {};\n", self.start_state));
+        let _ = writeln!(dot, "  start -> {};", self.start_state);
 
         // Group transitions by (from_state, to_state) pairs
         let mut transitions: HashMap<(usize, usize), Vec<u8>> = HashMap::new();
 
         for (from_state, state) in self.states.iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
             for (input, to_state) in state
                 .transitions
                 .iter()
@@ -220,17 +239,16 @@ impl Dfa {
 
         // Generate consolidated edges
         for ((from_state, to_state), inputs) in transitions {
-            let label = self.format_transition_label(&inputs);
-            dot.push_str(&format!(
-                "  {from_state} -> {to_state} [label=\"{label}\"];\n"
-            ));
+            let label = Self::format_transition_label(&inputs);
+            let _ = writeln!(dot, "  {from_state} -> {to_state} [label=\"{label}\"];");
         }
 
         dot.push_str("}\n");
         dot
     }
 
-    fn format_transition_label(&self, inputs: &[u8]) -> String {
+    /// Formats a list of input bytes into a compact label for DOT graph edges
+    fn format_transition_label(inputs: &[u8]) -> String {
         if inputs.len() == 1 {
             let input = inputs[0];
             if input.is_ascii_graphic() && input != b'"' && input != b'\\' {
@@ -266,20 +284,20 @@ impl Dfa {
                     if start.is_ascii_graphic() && start != b'"' && start != b'\\' {
                         result.push(start as char);
                     } else {
-                        result.push_str(&format!("\\\\x{start:02x}"));
+                        let _ = write!(result, "\\\\x{start:02x}");
                     }
                 } else if end == start + 1 {
                     // Two consecutive characters, show individually
                     if start.is_ascii_graphic() && start != b'"' && start != b'\\' {
                         result.push(start as char);
                     } else {
-                        result.push_str(&format!("\\\\x{start:02x}"));
+                        let _ = write!(result, "\\\\x{start:02x}");
                     }
                     result.push(',');
                     if end.is_ascii_graphic() && end != b'"' && end != b'\\' {
                         result.push(end as char);
                     } else {
-                        result.push_str(&format!("\\\\x{end:02x}"));
+                        let _ = write!(result, "\\\\x{end:02x}");
                     }
                 } else {
                     // Range of 3 or more characters
@@ -290,9 +308,9 @@ impl Dfa {
                         && end != b'"'
                         && end != b'\\'
                     {
-                        result.push_str(&format!("{}-{}", start as char, end as char));
+                        let _ = write!(result, "{}-{}", start as char, end as char);
                     } else {
-                        result.push_str(&format!("\\\\x{start:02x}-\\\\x{end:02x}"));
+                        let _ = write!(result, "\\\\x{start:02x}-\\\\x{end:02x}");
                     }
                 }
 

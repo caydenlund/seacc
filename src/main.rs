@@ -1,9 +1,7 @@
 use seacc::lex::{Nfa, RegexComponent, RegexPattern, TokenType};
 
 fn main() {
-    // Create a more comprehensive pattern that shows the issue
     let patterns_and_tokens = [
-        // Keywords
         (
             vec![RegexComponent::Literal("if".bytes().collect())],
             TokenType::If,
@@ -16,7 +14,6 @@ fn main() {
             vec![RegexComponent::Literal("for".bytes().collect())],
             TokenType::For,
         ),
-        // Generic identifier pattern [a-z]+
         (
             vec![RegexComponent::Repeat {
                 item: Box::new(RegexComponent::char_range(b'a', b'z')),

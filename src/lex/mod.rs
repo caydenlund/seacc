@@ -1,3 +1,5 @@
+//! lex: Datatypes and routines for tokenizing an input program
+
 mod lexer;
 
 mod regex;

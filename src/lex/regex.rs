@@ -1,53 +1,71 @@
+//! lex/regex: Regular expressions for defining lexical token patterns
+
+use super::TokenType;
+use super::state_machine::{Nfa, StateId};
 use crate::util::BitSet;
 
-use super::{
-    TokenType,
-    state_machine::{Nfa, StateId},
-};
-
+/// A single component of a regular expression
 #[derive(Debug, Clone)]
 pub enum RegexComponent {
+    /// A literal string (as a sequence of bytes)
     Literal(Vec<u8>),
+    /// Matches either one of two variants
     Alternation(Vec<RegexComponent>, Vec<RegexComponent>),
+    /// A series of [`RegexComponent`]s
     Group(Vec<RegexComponent>),
+    /// A set of allowed characters
     CharSet(BitSet<u32, 8>),
+    /// Repetition of a [`RegexComponent`]
     Repeat {
+        /// The item to repeat
         item: Box<RegexComponent>,
+        /// The minimum amount of times to match
         min: usize,
+        /// The (optional) maximum amount of times to match
         max: Option<usize>,
     },
 }
 
+/// A regular expression as a series of [`RegexComponent`]
 #[derive(Debug, Clone)]
 pub struct RegexPattern {
+    /// The series of [`RegexComponent`]s to match
     pattern: Vec<RegexComponent>,
 }
 
 impl RegexComponent {
+    /// Returns a new [`RegexComponent::CharSet`] for the given range of characters
+    #[must_use]
     pub fn char_range(start: u8, end: u8) -> Self {
         let mut char_set = BitSet::new();
         for c in start..=end {
             char_set.set(c as usize);
         }
-        RegexComponent::CharSet(char_set)
+        Self::CharSet(char_set)
     }
 
+    /// Returns a new [`RegexComponent::CharSet`] for the given series of characters
+    #[must_use]
     pub fn chars(chars: &[u8]) -> Self {
         let mut char_set = BitSet::new();
         for &c in chars {
             char_set.set(c as usize);
         }
-        RegexComponent::CharSet(char_set)
+        Self::CharSet(char_set)
     }
 }
 
 impl RegexPattern {
+    /// Returns a new [`RegexPattern`] for the given series of [`RegexComponent`]s
+    #[must_use]
     pub fn new(pattern: &[RegexComponent]) -> Self {
         Self {
             pattern: pattern.to_vec(),
         }
     }
 
+    /// Generates a [`Nfa`] for this regular expression
+    #[must_use]
     pub fn to_nfa(&self, token_type: TokenType) -> Nfa {
         let mut nfa = Nfa::new();
         let start_state = nfa.start_state;
@@ -57,6 +75,7 @@ impl RegexPattern {
         nfa
     }
 
+    /// Recursively generates a [`Nfa`] for a series of [`RegexComponent`]
     fn build_nfa_sequence(
         &self,
         nfa: &mut Nfa,
@@ -82,6 +101,7 @@ impl RegexPattern {
         }
     }
 
+    /// Recursively generates a [`Nfa`] for a single [`RegexComponent`]
     fn build_nfa_component(
         &self,
         nfa: &mut Nfa,
@@ -125,6 +145,7 @@ impl RegexPattern {
 
             RegexComponent::CharSet(char_set) => {
                 for byte in char_set.iter() {
+                    #[allow(clippy::cast_possible_truncation)]
                     nfa.add_transition(start, end, Some(byte as u8));
                 }
             }
