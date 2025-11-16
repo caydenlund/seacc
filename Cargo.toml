@@ -11,3 +11,4 @@ keywords = ["compiler", "ir", "sea-of-nodes", "optimization"]
 categories = ["compilers", "development-tools::build-utils"]
 
 [dependencies]
+clap = { version = "4.5.51", features = ["derive"] }
