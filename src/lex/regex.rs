@@ -58,9 +58,9 @@ impl RegexComponent {
 impl RegexPattern {
     /// Returns a new [`RegexPattern`] for the given series of [`RegexComponent`]s
     #[must_use]
-    pub fn new(pattern: &[RegexComponent]) -> Self {
+    pub fn new(pattern: impl AsRef<[RegexComponent]>) -> Self {
         Self {
-            pattern: pattern.to_vec(),
+            pattern: pattern.as_ref().to_vec(),
         }
     }
 
@@ -144,7 +144,7 @@ impl RegexPattern {
             }
 
             RegexComponent::CharSet(char_set) => {
-                for byte in char_set.iter() {
+                for byte in char_set {
                     #[allow(clippy::cast_possible_truncation)]
                     nfa.add_transition(start, end, Some(byte as u8));
                 }

@@ -1,5 +1,18 @@
 //! lex/token: Definition of the [`TokenType`] and [`Token`] datatypes for C programs
 
+/// A token with its type, lexeme, and source position
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    /// The type of this token
+    pub token_type: TokenType,
+    /// The original text that produced this token
+    pub lexeme: String,
+    /// Line number in source (1-indexed)
+    pub line: usize,
+    /// Column number in source (1-indexed)
+    pub column: usize,
+}
+
 /// Token types for C language lexical analysis
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TokenType {
