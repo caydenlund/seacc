@@ -9,4 +9,4 @@ pub enum StringLiteralEncoding {
     Utf32,
 }
 
-pub struct StringLiteral(StringLiteralEncoding, String);
+pub struct StringLiteral(pub StringLiteralEncoding, pub String);

@@ -13,9 +13,11 @@ pub enum Constant {
 pub struct IntegerConstant(pub i128, pub Option<IntegerSuffix>);
 
 pub enum IntegerSuffix {
-    Unsigned, // `u` or `U`
-    Long,     // `l` or `L`
-    LongLong, // `ll` or `LL`
+    Unsigned,         // `u` or `U`
+    Long,             // `l` or `L`
+    LongLong,         // `ll` or `LL`
+    UnsignedLong,     // (`u` or `U`) + (`l` or `L`) or (`l` or `L`) + (`u` or `U`)
+    UnsignedLongLong, // (`u` or `U`) + (`ll` or `LL`) or (`ll` or `LL`) + (`u` or `U`)
 }
 
 pub struct FloatingConstant(pub f64, pub Option<FloatingSuffix>);

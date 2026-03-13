@@ -25,12 +25,20 @@ impl Identifier {
         Ok(Self(raw_ident.into()))
     }
 
+    #[must_use]
     pub unsafe fn new_unchecked(raw_ident: &str) -> Self {
         Self(raw_ident.into())
     }
 
+    #[must_use]
     pub fn into_string(self) -> String {
         self.0
+    }
+}
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

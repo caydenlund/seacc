@@ -102,7 +102,52 @@ impl Keyword {
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Break => write!(f, "break"),
+            Self::Case => write!(f, "case"),
+            Self::Char => write!(f, "char"),
+            Self::Const => write!(f, "const"),
+            Self::Continue => write!(f, "continue"),
+            Self::Default => write!(f, "default"),
+            Self::Do => write!(f, "do"),
+            Self::Double => write!(f, "double"),
+            Self::Else => write!(f, "else"),
+            Self::Enum => write!(f, "enum"),
+            Self::Extern => write!(f, "extern"),
+            Self::Float => write!(f, "float"),
+            Self::For => write!(f, "for"),
+            Self::Goto => write!(f, "goto"),
+            Self::If => write!(f, "if"),
+            Self::Inline => write!(f, "inline"),
+            Self::Int => write!(f, "int"),
+            Self::Long => write!(f, "long"),
+            Self::Register => write!(f, "register"),
+            Self::Restrict => write!(f, "restrict"),
+            Self::Return => write!(f, "return"),
+            Self::Short => write!(f, "short"),
+            Self::Signed => write!(f, "signed"),
+            Self::Sizeof => write!(f, "sizeof"),
+            Self::Static => write!(f, "static"),
+            Self::Struct => write!(f, "struct"),
+            Self::Switch => write!(f, "switch"),
+            Self::Typedef => write!(f, "typedef"),
+            Self::Union => write!(f, "union"),
+            Self::Unsigned => write!(f, "unsigned"),
+            Self::Void => write!(f, "void"),
+            Self::Volatile => write!(f, "volatile"),
+            Self::While => write!(f, "while"),
+            Self::Alignas => write!(f, "_Alignas"),
+            Self::Alignof => write!(f, "_Alignof"),
+            Self::Atomic => write!(f, "_Atomic"),
+            Self::Bool => write!(f, "_Bool"),
+            Self::Complex => write!(f, "_Complex"),
+            Self::Generic => write!(f, "_Generic"),
+            Self::Imaginary => write!(f, "_Imaginary"),
+            Self::Noreturn => write!(f, "_Noreturn"),
+            Self::StaticAssert => write!(f, "_Static_assert"),
+            Self::ThreadLocal => write!(f, "_Thread_local"),
+        }
     }
 }
 
