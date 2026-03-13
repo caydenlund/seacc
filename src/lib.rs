@@ -10,4 +10,5 @@
     rustdoc::all
 )]
 
+pub mod span;
 pub mod token;
