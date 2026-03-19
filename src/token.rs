@@ -8,6 +8,7 @@ pub use identifier::*;
 pub use keyword::*;
 pub use string::*;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Keyword(Keyword),
     Identifier(Identifier),
@@ -16,21 +17,24 @@ pub enum Token {
     Punctuator(Punctuator),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreprocessingToken {
     HeaderName(HeaderNameType, String),
     Identifier(Identifier),
-    PpNumber(()),
+    PpNumber(String),
     CharacterConstant(CharacterConstant),
     StringLiteral(StringLiteral),
     Punctuator(Punctuator),
     OtherChar(()),
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HeaderNameType {
     Angled,
     Quoted,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Punctuator {
     LBracket,      // `[` or `<:`
     RBracket,      // `]` or `:>`

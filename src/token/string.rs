@@ -1,3 +1,4 @@
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StringLiteralEncoding {
     /// No prefix or prefix `u8` (corresponds to `char`)
     None,
@@ -9,4 +10,5 @@ pub enum StringLiteralEncoding {
     Utf32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StringLiteral(pub StringLiteralEncoding, pub String);
