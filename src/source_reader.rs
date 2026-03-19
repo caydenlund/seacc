@@ -1,7 +1,7 @@
 use crate::span::{ByteOffset, Span, Spanned};
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Result as IoResult};
+use std::io::{BufRead, BufReader, Error as IoError, ErrorKind, Result as IoResult};
 use std::path::Path;
 use std::str;
 
@@ -21,8 +21,14 @@ pub struct SourceReader<'src> {
     byte_offset: u32,
     /// Whether we've reached the end of the file
     eof: bool,
-    /// Lookahead buffer for trigraph detection (up to 3 chars)
+    /// Raw character lookahead buffer (for trigraph/CRLF detection, max 3 chars)
     lookahead: VecDeque<Spanned<'src, char>>,
+    /// Pending character from pass 2 lookahead
+    pending: Option<Spanned<'src, char>>,
+    /// Tracks if we've seen any characters (for EOF validation)
+    saw_any_char: bool,
+    /// Last character output from pass 2 (for EOF validation)
+    last_output_char: Option<char>,
 }
 
 impl<'src> SourceReader<'src> {
@@ -43,11 +49,20 @@ impl<'src> SourceReader<'src> {
             byte_offset: 0,
             eof: false,
             lookahead: VecDeque::new(),
+            pending: None,
+            saw_any_char: false,
+            last_output_char: None,
         })
     }
 
     /// Reads the next UTF-8 character from the buffer, refilling if necessary
+    /// Checks `lookahead` first before reading from the file
     fn read_raw_char(&mut self) -> IoResult<Option<Spanned<'src, char>>> {
+        // Check raw lookahead first
+        if let Some(ch) = self.lookahead.pop_front() {
+            return Ok(Some(ch));
+        }
+
         loop {
             if self.pos >= self.buffer.len() {
                 if self.eof {
@@ -173,18 +188,37 @@ impl<'src> SourceReader<'src> {
         Ok(Some(Spanned::new(replacement_char, span)))
     }
 
-    /// Fills the lookahead buffer with the next character, performing trigraph replacement
-    fn fill_lookahead(&mut self) -> IoResult<()> {
-        if let Some(ch) = self.read_raw_char()? {
-            if ch.value == '?' {
-                if let Some(r) = self.match_trigraph(ch)? {
-                    self.lookahead.push_back(r);
-                }
+    /// Reads one character after applying pass 1 (trigraphs + CRLF normalization)
+    fn read_pass1_char(&mut self) -> IoResult<Option<Spanned<'src, char>>> {
+        let Some(ch) = self.read_raw_char()? else {
+            return Ok(None);
+        };
+
+        // Trigraph replacement
+        let ch = if ch.value == '?' {
+            if let Some(replacement) = self.match_trigraph(ch)? {
+                replacement
             } else {
-                self.lookahead.push_back(ch);
+                // `match_trigraph` pushed non-trigraphs to `lookahead`; read next
+                return self.read_raw_char();
+            }
+        } else {
+            ch
+        };
+
+        // CRLF normalization
+        if ch.value == '\r' {
+            if let Some(next) = self.read_raw_char()? {
+                if next.value == '\n' {
+                    // Merge "\r\n" into single "\n" with combined span
+                    let span = Span::new(self.file_path, ch.span.start, next.span.end);
+                    return Ok(Some(Spanned::new('\n', span)));
+                }
+                self.lookahead.push_back(next);
             }
         }
-        Ok(())
+
+        Ok(Some(ch))
     }
 }
 
@@ -192,13 +226,60 @@ impl<'src> Iterator for SourceReader<'src> {
     type Item = IoResult<Spanned<'src, char>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.lookahead.is_empty() {
-            return Some(Ok(self.lookahead.pop_front()?));
+        // Check pending first (from pass 2 lookahead)
+        if let Some(ch) = self.pending.take() {
+            // Track and return
+            self.saw_any_char = true;
+            self.last_output_char = Some(ch.value);
+            return Some(Ok(ch));
         }
 
-        match self.fill_lookahead() {
-            Ok(()) => (!self.lookahead.is_empty()).then(|| Ok(self.lookahead.pop_front().unwrap())),
-            Err(e) => Some(Err(e)),
+        // Apply pass 2: line splicing
+        loop {
+            let ch = match self.read_pass1_char() {
+                Ok(Some(ch)) => ch,
+                Ok(None) => {
+                    // Reached EOF - validate phase 2 requirements:
+                    // "A source file that is not empty shall end in a new-line character"
+                    if self.saw_any_char && self.last_output_char != Some('\n') {
+                        return Some(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "source file must end with a newline character",
+                        )));
+                    }
+                    return None;
+                }
+                Err(e) => return Some(Err(e)),
+            };
+
+            // Check for backslash-newline (line splicing)
+            if ch.value == '\\' {
+                match self.read_pass1_char() {
+                    Ok(Some(next)) if next.value == '\n' => {
+                        // Found "\\\n" - skip both, continue loop
+                        continue;
+                    }
+                    Ok(Some(next)) => {
+                        // Not line splice - save next and return backslash
+                        self.pending = Some(next);
+                        self.saw_any_char = true;
+                        self.last_output_char = Some(ch.value);
+                        return Some(Ok(ch));
+                    }
+                    Ok(None) => {
+                        // Backslash at EOF - will fail EOF check since last char isn't '\n'
+                        self.saw_any_char = true;
+                        self.last_output_char = Some(ch.value);
+                        return Some(Ok(ch));
+                    }
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+
+            // Not a backslash; track and return
+            self.saw_any_char = true;
+            self.last_output_char = Some(ch.value);
+            return Some(Ok(ch));
         }
     }
 }
@@ -212,85 +293,88 @@ mod tests {
     #[test]
     fn test_basic_reading() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "abc").unwrap();
+        writeln!(file, "abc").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['a', 'b', 'c']);
+        assert_eq!(chars, vec!['a', 'b', 'c', '\n']);
     }
 
     #[test]
     fn test_utf8_multibyte() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "a→ℝ𝕏").unwrap();
+        writeln!(file, "a→ℝ𝕏").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['a', '→', 'ℝ', '𝕏']);
+        assert_eq!(chars, vec!['a', '→', 'ℝ', '𝕏', '\n']);
     }
 
     #[test]
     fn test_trigraph_replacement() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "??=??/??'").unwrap();
+        writeln!(file, "??=??/??'").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['#', '\\', '^']);
+        assert_eq!(chars, vec!['#', '\\', '^', '\n']);
     }
 
     #[test]
     fn test_all_trigraphs() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "??=??(??)??/??'??<??!??>??-").unwrap();
+        writeln!(file, "??=??(??)??/??'??<??!??>??-").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['#', '[', ']', '\\', '^', '{', '|', '}', '~']);
+        assert_eq!(
+            chars,
+            vec!['#', '[', ']', '\\', '^', '{', '|', '}', '~', '\n']
+        );
     }
 
     #[test]
     fn test_non_trigraph() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "??x??y").unwrap();
+        writeln!(file, "??x??y").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['?', '?', 'x', '?', '?', 'y']);
+        assert_eq!(chars, vec!['?', '?', 'x', '?', '?', 'y', '\n']);
     }
 
     #[test]
     fn test_single_question_mark() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "a?b").unwrap();
+        writeln!(file, "a?b").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
 
-        assert_eq!(chars, vec!['a', '?', 'b']);
+        assert_eq!(chars, vec!['a', '?', 'b', '\n']);
     }
 
     #[test]
     fn test_span_tracking() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "a??=b").unwrap();
+        writeln!(file, "a??=b").unwrap();
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<Spanned<'_, char>> = reader.map(|r| r.unwrap()).collect();
 
-        assert_eq!(chars.len(), 3);
+        assert_eq!(chars.len(), 4);
         assert_eq!(chars[0].value, 'a');
         assert_eq!(chars[0].span.start.0, 0);
         assert_eq!(chars[0].span.end.0, 1);
@@ -302,18 +386,22 @@ mod tests {
         assert_eq!(chars[2].value, 'b');
         assert_eq!(chars[2].span.start.0, 4);
         assert_eq!(chars[2].span.end.0, 5);
+
+        assert_eq!(chars[3].value, '\n');
+        assert_eq!(chars[3].span.start.0, 5);
+        assert_eq!(chars[3].span.end.0, 6);
     }
 
     #[test]
     fn test_span_tracking_multibyte() {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "→??=ℝ").unwrap(); // → is 3 bytes, ℝ is 3 bytes
+        writeln!(file, "→??=ℝ").unwrap(); // "→" is 3 bytes; "ℝ" is 3 bytes
         let path = file.path().to_str().unwrap();
 
         let reader = SourceReader::new(path).unwrap();
         let chars: Vec<Spanned<'_, char>> = reader.map(|r| r.unwrap()).collect();
 
-        assert_eq!(chars.len(), 3);
+        assert_eq!(chars.len(), 4);
         assert_eq!(chars[0].value, '→');
         assert_eq!(chars[0].span.start.0, 0);
         assert_eq!(chars[0].span.end.0, 3);
@@ -325,5 +413,172 @@ mod tests {
         assert_eq!(chars[2].value, 'ℝ');
         assert_eq!(chars[2].span.start.0, 6);
         assert_eq!(chars[2].span.end.0, 9);
+
+        assert_eq!(chars[3].value, '\n');
+        assert_eq!(chars[3].span.start.0, 9);
+        assert_eq!(chars[3].span.end.0, 10);
+    }
+
+    #[test]
+    fn test_crlf_normalization() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "a\r\nb\rc\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // "\r\n" should become "\n"; standalone "\r" stays; "\n" stays
+        assert_eq!(chars, vec!['a', '\n', 'b', '\r', 'c', '\n']);
+    }
+
+    #[test]
+    fn test_backslash_newline_removal() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "a\\\nb\\c\nd\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // "\\\n" should be removed (line splicing)
+        assert_eq!(chars, vec!['a', 'b', '\\', 'c', '\n', 'd', '\n']);
+    }
+
+    #[test]
+    fn test_backslash_crlf_removal() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "a\\\r\nb\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // "\r\n" normalized to "\n" first, then "\\\n" removed
+        assert_eq!(chars, vec!['a', 'b', '\n']);
+    }
+
+    #[test]
+    fn test_combined_passes() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "??=\\\n#\r\ntest\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // "??=" -> "#"; "\\\n" removed; "\r\n" -> "\n"
+        assert_eq!(chars, vec!['#', '#', '\n', 't', 'e', 's', 't', '\n']);
+    }
+
+    #[test]
+    fn test_multiline_string_splicing() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "\"hel\\\nlo\"\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // Line splicing should work inside strings
+        assert_eq!(chars, vec!['"', 'h', 'e', 'l', 'l', 'o', '"', '\n']);
+    }
+
+    #[test]
+    fn test_simple_line_splice() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "a\\\nb\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let chars: Vec<char> = reader.map(|r| r.unwrap().value).collect();
+
+        // "\\\n" removed
+        assert_eq!(chars, vec!['a', 'b', '\n']);
+    }
+
+    #[test]
+    fn test_empty_file_allowed() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // Empty files are allowed
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![]);
+    }
+
+    #[test]
+    fn test_file_must_end_with_newline() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "abc").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // Non-empty file without trailing newline should error
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_file_ending_with_backslash() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "abc\\").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // File ending with backslash (no newline) should error
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_file_ending_with_backslash_newline() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "abc\\").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // File ending with "\\\n" should error (line splicing removes it, leaving no final newline)
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        assert!(err.to_string().contains("newline"));
+    }
+
+    #[test]
+    fn test_file_ending_with_newline_ok() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "abc").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // File ending with newline is OK
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec!['a', 'b', 'c', '\n']);
+    }
+
+    #[test]
+    fn test_line_splice_not_at_eof_ok() {
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "abc\\\ndef\n").unwrap();
+        let path = file.path().to_str().unwrap();
+
+        let reader = SourceReader::new(path).unwrap();
+        let result: Result<Vec<char>, _> = reader.map(|r| r.map(|s| s.value)).collect();
+
+        // Line splice in the middle is OK, file ends with proper newline
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec!['a', 'b', 'c', 'd', 'e', 'f', '\n']);
     }
 }
