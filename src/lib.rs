@@ -10,5 +10,6 @@
     rustdoc::all
 )]
 
+pub mod source_reader;
 pub mod span;
 pub mod token;

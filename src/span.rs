@@ -18,3 +18,17 @@ impl<'src> Span<'src> {
         Self { file, start, end }
     }
 }
+
+/// A generic wrapper that associates a value with its source span
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Spanned<'src, T> {
+    pub value: T,
+    pub span: Span<'src>,
+}
+
+impl<'src, T> Spanned<'src, T> {
+    #[must_use]
+    pub const fn new(value: T, span: Span<'src>) -> Self {
+        Self { value, span }
+    }
+}
