@@ -25,8 +25,6 @@ pub struct SourceReader<'src> {
     lookahead: VecDeque<Spanned<'src, char>>,
     /// Pending character from pass 2 lookahead
     pending: Option<Spanned<'src, char>>,
-    /// Tracks if we've seen any characters (for EOF validation)
-    saw_any_char: bool,
     /// Last character output from pass 2 (for EOF validation)
     last_output_char: Option<char>,
 }
@@ -50,7 +48,6 @@ impl<'src> SourceReader<'src> {
             eof: false,
             lookahead: VecDeque::new(),
             pending: None,
-            saw_any_char: false,
             last_output_char: None,
         })
     }
@@ -228,8 +225,6 @@ impl<'src> Iterator for SourceReader<'src> {
     fn next(&mut self) -> Option<Self::Item> {
         // Check pending first (from pass 2 lookahead)
         if let Some(ch) = self.pending.take() {
-            // Track and return
-            self.saw_any_char = true;
             self.last_output_char = Some(ch.value);
             return Some(Ok(ch));
         }
@@ -241,11 +236,13 @@ impl<'src> Iterator for SourceReader<'src> {
                 Ok(None) => {
                     // Reached EOF - validate phase 2 requirements:
                     // "A source file that is not empty shall end in a new-line character"
-                    if self.saw_any_char && self.last_output_char != Some('\n') {
-                        return Some(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "source file must end with a newline character",
-                        )));
+                    if let Some(last_ch) = self.last_output_char {
+                        if last_ch != '\n' {
+                            return Some(Err(IoError::new(
+                                ErrorKind::InvalidData,
+                                "source file must end with a newline character",
+                            )));
+                        }
                     }
                     return None;
                 }
@@ -262,13 +259,11 @@ impl<'src> Iterator for SourceReader<'src> {
                     Ok(Some(next)) => {
                         // Not line splice - save next and return backslash
                         self.pending = Some(next);
-                        self.saw_any_char = true;
                         self.last_output_char = Some(ch.value);
                         return Some(Ok(ch));
                     }
                     Ok(None) => {
                         // Backslash at EOF - will fail EOF check since last char isn't '\n'
-                        self.saw_any_char = true;
                         self.last_output_char = Some(ch.value);
                         return Some(Ok(ch));
                     }
@@ -277,7 +272,6 @@ impl<'src> Iterator for SourceReader<'src> {
             }
 
             // Not a backslash; track and return
-            self.saw_any_char = true;
             self.last_output_char = Some(ch.value);
             return Some(Ok(ch));
         }
