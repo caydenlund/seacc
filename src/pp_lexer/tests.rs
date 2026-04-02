@@ -21,7 +21,7 @@ fn lex_str(input: &str) -> Result<Vec<PreprocessingToken>, String> {
 #[test]
 fn test_simple_identifier() {
     let tokens = lex_str("foo").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // foo + newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "foo");
@@ -33,7 +33,7 @@ fn test_simple_identifier() {
 #[test]
 fn test_identifier_with_underscore() {
     let tokens = lex_str("_bar").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // _bar + newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "_bar");
@@ -45,7 +45,7 @@ fn test_identifier_with_underscore() {
 #[test]
 fn test_identifier_with_numbers() {
     let tokens = lex_str("test123").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // test123 + newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "test123");
@@ -57,7 +57,7 @@ fn test_identifier_with_numbers() {
 #[test]
 fn test_underscore_only() {
     let tokens = lex_str("_").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // _ + newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "_");
@@ -98,7 +98,7 @@ fn test_single_char_punctuators() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 1, "Failed for input: {input}");
+        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator + newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -141,7 +141,7 @@ fn test_multi_char_punctuators() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 1, "Failed for input: {input}");
+        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator + newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -167,7 +167,7 @@ fn test_digraphs() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 1, "Failed for digraph: {input}");
+        assert_eq!(tokens.len(), 2, "Failed for digraph: {input}"); // digraph + newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -184,7 +184,7 @@ fn test_digraphs() {
 fn test_longest_match() {
     // Test that "<<=" is lexed as one token, not "<<" + "="
     let tokens = lex_str("<<=").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // <<= + newline
     match &tokens[0] {
         PreprocessingToken::Punctuator(Punctuator::LShiftAssign) => {}
         _ => panic!("Expected LShiftAssign"),
@@ -192,7 +192,7 @@ fn test_longest_match() {
 
     // Test that "++" is one token
     let tokens = lex_str("++").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // ++ + newline
     match &tokens[0] {
         PreprocessingToken::Punctuator(Punctuator::Incr) => {}
         _ => panic!("Expected Incr"),
@@ -200,54 +200,78 @@ fn test_longest_match() {
 }
 
 #[test]
-fn test_whitespace_skipping() {
+fn test_whitespace_tokens() {
     let tokens = lex_str("foo  \t  bar").unwrap();
-    assert_eq!(tokens.len(), 2);
-    match (&tokens[0], &tokens[1]) {
-        (PreprocessingToken::Identifier(id1), PreprocessingToken::Identifier(id2)) => {
+    assert_eq!(tokens.len(), 4); // foo + whitespace + bar + newline
+    match (&tokens[0], &tokens[1], &tokens[2]) {
+        (
+            PreprocessingToken::Identifier(id1),
+            PreprocessingToken::Whitespace,
+            PreprocessingToken::Identifier(id2),
+        ) => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
         }
-        _ => panic!("Expected two identifiers"),
+        _ => panic!("Expected identifier, whitespace, identifier"),
     }
 }
 
 #[test]
 fn test_line_comment() {
     let tokens = lex_str("foo // comment\nbar").unwrap();
-    assert_eq!(tokens.len(), 2);
-    match (&tokens[0], &tokens[1]) {
-        (PreprocessingToken::Identifier(id1), PreprocessingToken::Identifier(id2)) => {
+    // foo + space + comment + newline + bar + newline(from writeln!)
+    assert_eq!(tokens.len(), 6);
+    match &tokens[..] {
+        [
+            PreprocessingToken::Identifier(id1),
+            PreprocessingToken::Whitespace, // space before comment
+            PreprocessingToken::Whitespace, // comment itself
+            PreprocessingToken::Newline,    // explicit newline
+            PreprocessingToken::Identifier(id2),
+            PreprocessingToken::Newline, // from writeln!
+        ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
         }
-        _ => panic!("Expected two identifiers"),
+        _ => panic!("Unexpected token sequence: {tokens:?}"),
     }
 }
 
 #[test]
 fn test_block_comment() {
     let tokens = lex_str("foo/*comment*/bar").unwrap();
-    assert_eq!(tokens.len(), 2);
-    match (&tokens[0], &tokens[1]) {
-        (PreprocessingToken::Identifier(id1), PreprocessingToken::Identifier(id2)) => {
+    // foo + comment + bar + newline(from writeln!)
+    assert_eq!(tokens.len(), 4);
+    match &tokens[..] {
+        [
+            PreprocessingToken::Identifier(id1),
+            PreprocessingToken::Whitespace, // comment
+            PreprocessingToken::Identifier(id2),
+            PreprocessingToken::Newline, // from writeln!
+        ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
         }
-        _ => panic!("Expected two identifiers"),
+        _ => panic!("Unexpected token sequence: {tokens:?}"),
     }
 }
 
 #[test]
 fn test_block_comment_multiline() {
     let tokens = lex_str("foo/*line1\nline2*/bar").unwrap();
-    assert_eq!(tokens.len(), 2);
-    match (&tokens[0], &tokens[1]) {
-        (PreprocessingToken::Identifier(id1), PreprocessingToken::Identifier(id2)) => {
+    // foo + comment + bar + newline(from writeln!)
+    assert_eq!(tokens.len(), 4);
+    match &tokens[..] {
+        [
+            PreprocessingToken::Identifier(id1),
+            PreprocessingToken::Whitespace, // comment (with embedded newline)
+            PreprocessingToken::Identifier(id2),
+            PreprocessingToken::Newline, // from writeln!
+        ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
         }
-        _ => panic!("Expected two identifiers"),
+        _ => panic!("Unexpected token sequence: {tokens:?}"),
     }
 }
 
@@ -262,120 +286,175 @@ fn test_unterminated_block_comment() {
 #[test]
 fn test_complex_expression() {
     let tokens = lex_str("x = y + 42;").unwrap();
-    assert_eq!(tokens.len(), 6);
+    // x + space + = + space + y + space + + + space + 42 + ; + newline = 11 tokens
+    assert_eq!(tokens.len(), 11);
 
     match &tokens[..] {
         [
             PreprocessingToken::Identifier(id1),
+            PreprocessingToken::Whitespace,
             PreprocessingToken::Punctuator(Punctuator::Assign),
+            PreprocessingToken::Whitespace,
             PreprocessingToken::Identifier(id2),
+            PreprocessingToken::Whitespace,
             PreprocessingToken::Punctuator(Punctuator::Plus),
+            PreprocessingToken::Whitespace,
             PreprocessingToken::PpNumber(num),
             PreprocessingToken::Punctuator(Punctuator::Semicolon),
+            PreprocessingToken::Newline,
         ] => {
             assert_eq!(id1.as_ref(), "x");
             assert_eq!(id2.as_ref(), "y");
             assert_eq!(num, "42");
         }
-        _ => panic!("Unexpected token sequence"),
+        _ => panic!("Unexpected token sequence: {tokens:?}"),
     }
 }
 
 #[test]
 fn test_digraph_in_expression() {
-    // "<:0:>" should be "[", "0", "]"
+    // "<:0:>" should be "[", "0", "]" + newline
     let tokens = lex_str("<:0:>").unwrap();
-    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens.len(), 4); // [ + 0 + ] + newline
 
     match &tokens[..] {
         [
             PreprocessingToken::Punctuator(Punctuator::LBracket),
             PreprocessingToken::PpNumber(num),
             PreprocessingToken::Punctuator(Punctuator::RBracket),
+            PreprocessingToken::Newline,
         ] => {
             assert_eq!(num, "0");
         }
-        _ => panic!("Unexpected token sequence"),
+        _ => panic!("Unexpected token sequence: {tokens:?}"),
     }
 }
 
 #[test]
 fn test_adjacent_operators() {
-    // "<<=" should be one token
+    // "<<=" should be one token + newline
     let tokens = lex_str("<<=").unwrap();
-    assert_eq!(tokens.len(), 1);
-
-    // "< <=" should be two tokens
-    let tokens = lex_str("< <=").unwrap();
     assert_eq!(tokens.len(), 2);
+    match &tokens[..] {
+        [
+            PreprocessingToken::Punctuator(Punctuator::LShiftAssign),
+            PreprocessingToken::Newline,
+        ] => {}
+        _ => panic!("Unexpected tokens: {tokens:?}"),
+    }
+
+    // "< <=" should be three tokens: < + space + <= + newline
+    let tokens = lex_str("< <=").unwrap();
+    assert_eq!(tokens.len(), 4);
+    match &tokens[..] {
+        [
+            PreprocessingToken::Punctuator(Punctuator::Lt),
+            PreprocessingToken::Whitespace,
+            PreprocessingToken::Punctuator(Punctuator::Leq),
+            PreprocessingToken::Newline,
+        ] => {}
+        _ => panic!("Unexpected tokens: {tokens:?}"),
+    }
 }
 
 // ============================================================================
-// ERROR TESTS
+// OTHER CHAR TESTS (previously unexpected characters, now valid OtherChar tokens)
 // ============================================================================
 
 #[test]
-fn test_unexpected_char_at_sign() {
-    let result = lex_str("foo @ bar");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_at_sign() {
+    let tokens = lex_str("foo @ bar").unwrap();
+    // foo + space + @ + space + bar + newline
+    assert_eq!(tokens.len(), 6);
+    match &tokens[2] {
+        PreprocessingToken::OtherChar('@') => {}
+        _ => panic!("Expected OtherChar('@'), got {:?}", tokens[2]),
+    }
 }
 
 #[test]
-fn test_unexpected_char_dollar() {
-    let result = lex_str("$var");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '$'"));
+fn test_other_char_dollar() {
+    let tokens = lex_str("$var").unwrap();
+    // $ + var + newline
+    assert_eq!(tokens.len(), 3);
+    match &tokens[0] {
+        PreprocessingToken::OtherChar('$') => {}
+        _ => panic!("Expected OtherChar('$'), got {:?}", tokens[0]),
+    }
 }
 
 #[test]
-fn test_unexpected_char_backtick() {
-    let result = lex_str("`command`");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '`'"));
+fn test_other_char_backtick() {
+    let tokens = lex_str("`command`").unwrap();
+    // ` + command + ` + newline
+    assert_eq!(tokens.len(), 4);
+    match (&tokens[0], &tokens[2]) {
+        (PreprocessingToken::OtherChar('`'), PreprocessingToken::OtherChar('`')) => {}
+        _ => panic!("Expected backticks as OtherChar, got {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_backslash() {
-    let result = lex_str("foo \\ bar");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '\\'"));
+fn test_other_char_backslash() {
+    let tokens = lex_str("foo \\ bar").unwrap();
+    // foo + space + \ + space + bar + newline
+    assert_eq!(tokens.len(), 6);
+    match &tokens[2] {
+        PreprocessingToken::OtherChar('\\') => {}
+        _ => panic!("Expected OtherChar('\\'), got {:?}", tokens[2]),
+    }
 }
 
 #[test]
-fn test_unexpected_char_in_expression() {
-    let result = lex_str("x = y @ 42");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_in_expression() {
+    let tokens = lex_str("x = y @ 42").unwrap();
+    // Contains @ as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_after_valid_tokens() {
-    let result = lex_str("int x; $ int y;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '$'"));
+fn test_other_char_after_valid_tokens() {
+    let tokens = lex_str("int x; $ int y;").unwrap();
+    // Contains $ as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('$')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('$') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_unicode_snowman() {
-    let result = lex_str("foo ☃ bar");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_unicode_snowman() {
+    let tokens = lex_str("foo ☃ bar").unwrap();
+    // Contains snowman as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('☃')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('☃') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_unicode_emoji() {
-    let result = lex_str("x = 🚀");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_unicode_emoji() {
+    let tokens = lex_str("x = 🚀").unwrap();
+    // Contains rocket emoji as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('🚀')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('🚀') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -437,29 +516,46 @@ fn test_unterminated_block_comment_after_code() {
 }
 
 #[test]
-fn test_multiple_unexpected_chars_first_reported() {
-    // Should report the first unexpected character
-    let result = lex_str("@ $");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_multiple_other_chars() {
+    // Both @ and $ become OtherChar tokens
+    let tokens = lex_str("@ $").unwrap();
+    // @ + space + $ + newline
+    assert_eq!(tokens.len(), 4);
+    match (&tokens[0], &tokens[2]) {
+        (PreprocessingToken::OtherChar('@'), PreprocessingToken::OtherChar('$')) => {}
+        _ => panic!("Expected OtherChar('@') and OtherChar('$'), got {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_between_valid_operators() {
-    let result = lex_str("x + @ - y");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_between_valid_operators() {
+    let tokens = lex_str("x + @ - y").unwrap();
+    // Contains @ as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_in_comment_like_but_invalid() {
-    // Starts like a comment but isn't
-    let result = lex_str("/ @ comment");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_after_slash() {
+    // Slash followed by @
+    let tokens = lex_str("/ @ comment").unwrap();
+    // / + space + @ + space + comment + newline
+    match (
+        tokens
+            .iter()
+            .find(|t| matches!(t, PreprocessingToken::Punctuator(Punctuator::Slash))),
+        tokens
+            .iter()
+            .find(|t| matches!(t, PreprocessingToken::OtherChar('@'))),
+    ) {
+        (Some(_), Some(_)) => {}
+        _ => panic!("Expected Slash punctuator and OtherChar('@'), got {tokens:?}"),
+    }
 }
 
 #[test]
@@ -471,36 +567,54 @@ fn test_unterminated_with_slash_not_after_star() {
 }
 
 #[test]
-fn test_unexpected_char_grave_accent() {
-    let result = lex_str("foo`bar");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '`'"));
+fn test_other_char_grave_accent() {
+    let tokens = lex_str("foo`bar").unwrap();
+    // foo + ` + bar + newline
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('`')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('`') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_hash_at_operator_position() {
+fn test_other_char_at_operator_position() {
     // '@' in a binary operator position
-    let result = lex_str("a @ b");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+    let tokens = lex_str("a @ b").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_pound_sterling() {
-    let result = lex_str("int £var = 0;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_pound_sterling() {
+    let tokens = lex_str("int £var = 0;").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('£')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('£') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_euro_symbol() {
-    let result = lex_str("€100");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_euro_symbol() {
+    let tokens = lex_str("€100").unwrap();
+    // € + 100 + newline
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('€')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('€') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -520,19 +634,28 @@ fn test_unterminated_block_comment_only_slash() {
 }
 
 #[test]
-fn test_unexpected_char_after_number() {
-    let result = lex_str("123@456");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_after_number() {
+    let tokens = lex_str("123@456").unwrap();
+    // 123 + @ + 456 + newline
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_after_punctuator() {
-    let result = lex_str("+ @ -");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_after_punctuator() {
+    let tokens = lex_str("+ @ -").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -544,19 +667,27 @@ fn test_unterminated_block_comment_many_stars() {
 }
 
 #[test]
-fn test_unexpected_char_section_symbol() {
-    let result = lex_str("§ section");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_section_symbol() {
+    let tokens = lex_str("§ section").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('§')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('§') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_middle_of_tokens() {
-    let result = lex_str("hello $ world");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '$'"));
+fn test_other_char_middle_of_tokens() {
+    let tokens = lex_str("hello $ world").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('$')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('$') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -569,11 +700,15 @@ fn test_unterminated_comment_with_close_sequence_split() {
 }
 
 #[test]
-fn test_unexpected_char_japanese_character() {
-    let result = lex_str("int あ = 5;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_japanese_character() {
+    let tokens = lex_str("int あ = 5;").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('あ')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('あ') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -586,35 +721,53 @@ fn test_unterminated_block_comment_multiple_star_slash_attempts() {
 }
 
 #[test]
-fn test_unexpected_char_after_complete_statement() {
-    let result = lex_str("int x = 0; @ return x;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_after_complete_statement() {
+    let tokens = lex_str("int x = 0; @ return x;").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_tilde_accent() {
-    let result = lex_str("señor ñ");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_tilde_accent() {
+    let tokens = lex_str("señor ñ").unwrap();
+    // Contains ñ as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('ñ')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('ñ') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_at_end_of_file() {
-    let result = lex_str("int x = 42 @");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_at_end_of_file() {
+    let tokens = lex_str("int x = 42 @").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_circumflex_accent() {
-    let result = lex_str("café");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_circumflex_accent() {
+    let tokens = lex_str("café").unwrap();
+    // Contains é as OtherChar
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('é')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('é') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -626,19 +779,27 @@ fn test_unterminated_block_comment_with_only_stars() {
 }
 
 #[test]
-fn test_unexpected_char_start_of_file() {
-    let result = lex_str("@ int x;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_start_of_file() {
+    let tokens = lex_str("@ int x;").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_in_pp_number_context() {
-    let result = lex_str("123 @ 456");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_in_pp_number_context() {
+    let tokens = lex_str("123 @ 456").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -650,27 +811,41 @@ fn test_unterminated_comment_star_at_eof() {
 }
 
 #[test]
-fn test_unexpected_char_chinese_character() {
-    let result = lex_str("int 变量 = 5;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_chinese_character() {
+    let tokens = lex_str("int 变量 = 5;").unwrap();
+    // Contains Chinese characters as OtherChar tokens
+    let has_chinese = tokens
+        .iter()
+        .any(|t| matches!(t, PreprocessingToken::OtherChar(c) if *c == '变' || *c == '量'));
+    assert!(
+        has_chinese,
+        "Expected Chinese characters as OtherChar in tokens: {tokens:?}"
+    );
 }
 
 #[test]
-fn test_unexpected_char_arabic_character() {
-    let result = lex_str("int متغير = 5;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_arabic_character() {
+    let tokens = lex_str("int متغير = 5;").unwrap();
+    // Contains Arabic characters as OtherChar tokens
+    let has_arabic = tokens
+        .iter()
+        .any(|t| matches!(t, PreprocessingToken::OtherChar(c) if *c >= 'ا' && *c <= 'ي'));
+    assert!(
+        has_arabic,
+        "Expected Arabic characters as OtherChar in tokens: {tokens:?}"
+    );
 }
 
 #[test]
-fn test_unexpected_char_after_digraph() {
-    let result = lex_str("<: @ :>");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_after_digraph() {
+    let tokens = lex_str("<: @ :>").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -683,19 +858,27 @@ fn test_unterminated_block_comment_reverse_closing() {
 }
 
 #[test]
-fn test_unexpected_char_mathematical_symbol() {
-    let result = lex_str("x ≠ y");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_mathematical_symbol() {
+    let tokens = lex_str("x ≠ y").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('≠')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('≠') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_cyrillic() {
-    let result = lex_str("int Ф = 5;");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_cyrillic() {
+    let tokens = lex_str("int Ф = 5;").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('Ф')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('Ф') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -707,11 +890,15 @@ fn test_unterminated_block_comment_with_many_slashes() {
 }
 
 #[test]
-fn test_unexpected_char_in_punctuator_sequence() {
-    let result = lex_str("x +@ y");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character '@'"));
+fn test_other_char_in_punctuator_sequence() {
+    let tokens = lex_str("x +@ y").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('@') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -724,27 +911,39 @@ fn test_unterminated_block_comment_star_star_slash() {
 }
 
 #[test]
-fn test_unexpected_char_copyright_symbol() {
-    let result = lex_str("© 2024");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_copyright_symbol() {
+    let tokens = lex_str("© 2024").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('©')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('©') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_registered_trademark() {
-    let result = lex_str("MyLib® v1.0");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_registered_trademark() {
+    let tokens = lex_str("MyLib® v1.0").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('®')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('®') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
-fn test_unexpected_char_degree_symbol() {
-    let result = lex_str("angle = 90°");
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("unexpected character"));
+fn test_other_char_degree_symbol() {
+    let tokens = lex_str("angle = 90°").unwrap();
+    match tokens
+        .iter()
+        .find(|t| matches!(t, PreprocessingToken::OtherChar('°')))
+    {
+        Some(_) => {}
+        None => panic!("Expected OtherChar('°') in tokens: {tokens:?}"),
+    }
 }
 
 #[test]
@@ -754,4 +953,140 @@ fn test_unterminated_block_comment_documentation_style_incomplete() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.contains("unterminated block comment"));
+}
+
+// ============================================================================
+// WHITESPACE AND NEWLINE TESTS
+// ============================================================================
+
+#[test]
+fn test_single_space_whitespace() {
+    let tokens = lex_str("a b").unwrap();
+    // a + space + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!("Expected Whitespace token, got {:?}", tokens[1]),
+    }
+}
+
+#[test]
+fn test_multiple_spaces_collapsed() {
+    let tokens = lex_str("a     b").unwrap();
+    // a + whitespace(collapsed) + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!(
+            "Expected single Whitespace token for multiple spaces, got {:?}",
+            tokens[1]
+        ),
+    }
+}
+
+#[test]
+fn test_tabs_collapsed() {
+    let tokens = lex_str("a\t\t\tb").unwrap();
+    // a + whitespace(collapsed tabs) + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!(
+            "Expected single Whitespace token for multiple tabs, got {:?}",
+            tokens[1]
+        ),
+    }
+}
+
+#[test]
+fn test_mixed_whitespace_collapsed() {
+    let tokens = lex_str("a  \t  \t  b").unwrap();
+    // a + whitespace(mixed spaces and tabs) + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!(
+            "Expected single Whitespace token for mixed whitespace, got {:?}",
+            tokens[1]
+        ),
+    }
+}
+
+#[test]
+fn test_newline_token() {
+    let tokens = lex_str("a\nb").unwrap();
+    // a + newline + b + newline(from writeln!)
+    assert_eq!(tokens.len(), 4);
+    match (&tokens[1], &tokens[3]) {
+        (PreprocessingToken::Newline, PreprocessingToken::Newline) => {}
+        _ => panic!("Expected Newline tokens, got {tokens:?}"),
+    }
+}
+
+#[test]
+fn test_whitespace_not_newline() {
+    let tokens = lex_str("a \nb").unwrap();
+    // a + space + newline + b + newline
+    assert_eq!(tokens.len(), 5);
+    match (&tokens[1], &tokens[2]) {
+        (PreprocessingToken::Whitespace, PreprocessingToken::Newline) => {}
+        _ => panic!("Expected Whitespace then Newline, got {tokens:?}"),
+    }
+}
+
+#[test]
+fn test_vertical_tab_as_whitespace() {
+    let tokens = lex_str("a\x0Bb").unwrap();
+    // a + vertical tab + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!("Expected Whitespace for vertical tab, got {:?}", tokens[1]),
+    }
+}
+
+#[test]
+fn test_form_feed_as_whitespace() {
+    let tokens = lex_str("a\x0Cb").unwrap();
+    // a + form feed + b + newline
+    assert_eq!(tokens.len(), 4);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!("Expected Whitespace for form feed, got {:?}", tokens[1]),
+    }
+}
+
+#[test]
+fn test_multiple_newlines() {
+    let tokens = lex_str("\n\n\n").unwrap();
+    // 3 explicit newlines + 1 from writeln! = 4 newlines
+    assert_eq!(tokens.len(), 4);
+    for (i, token) in tokens.iter().enumerate() {
+        match token {
+            PreprocessingToken::Newline => {}
+            _ => panic!("Expected all Newline tokens, but token {i} is {token:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_whitespace_at_start() {
+    let tokens = lex_str("   foo").unwrap();
+    // whitespace + foo + newline
+    assert_eq!(tokens.len(), 3);
+    match &tokens[0] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!("Expected Whitespace at start, got {:?}", tokens[0]),
+    }
+}
+
+#[test]
+fn test_whitespace_at_end() {
+    let tokens = lex_str("foo   ").unwrap();
+    // foo + whitespace + newline
+    assert_eq!(tokens.len(), 3);
+    match &tokens[1] {
+        PreprocessingToken::Whitespace => {}
+        _ => panic!("Expected Whitespace at end, got {:?}", tokens[1]),
+    }
 }

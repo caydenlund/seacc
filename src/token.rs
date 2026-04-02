@@ -25,7 +25,9 @@ pub enum PreprocessingToken {
     CharacterConstant(CharacterConstant),
     StringLiteral(StringLiteral),
     Punctuator(Punctuator),
-    OtherChar(()),
+    Whitespace,
+    Newline,
+    OtherChar(char),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

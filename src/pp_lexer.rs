@@ -105,27 +105,58 @@ impl<'src> PpLexer<'src> {
         Ok(())
     }
 
-    /// Skip a line comment ("//" until newline)
-    fn skip_line_comment(&mut self) -> Result<(), PpLexerError<'src>> {
-        self.read_known_char('/')?;
-        self.read_known_char('/')?;
+    /// Check if a character is whitespace (not including newline)
+    const fn is_whitespace(ch: char) -> bool {
+        matches!(ch, ' ' | '\t' | '\x0B' | '\x0C')
+    }
+
+    /// Lex consecutive whitespace characters (not including newlines) into a single Whitespace token
+    fn lex_whitespace(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+        let first = self.read_char()?.unwrap();
+        let mut span = first.span;
+
+        while let Some(ch) = self.peek_char()? {
+            if Self::is_whitespace(ch.value) {
+                let ch = self.read_char()?.unwrap();
+                span.end = ch.span.end;
+            } else {
+                break;
+            }
+        }
+
+        Ok(Spanned::new(PreprocessingToken::Whitespace, span))
+    }
+
+    /// Lex a newline character into a Newline token
+    fn lex_newline(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+        let ch = self.read_char()?.unwrap();
+        assert_eq!(ch.value, '\n');
+        Ok(Spanned::new(PreprocessingToken::Newline, ch.span))
+    }
+
+    /// Lex a line comment ("//" until newline) as a Whitespace token
+    fn lex_line_comment(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+        let start_span = self.read_known_char('/')?.unwrap();
+        let mut end_span = self.read_known_char('/')?.unwrap();
 
         while let Some(ch) = self.peek_char()? {
             if ch.value == '\n' {
                 break;
             }
-            self.read_char()?;
+            end_span = self.read_char()?.unwrap().span;
         }
 
-        Ok(())
+        let span = Span::new(start_span.file, start_span.start, end_span.end);
+        Ok(Spanned::new(PreprocessingToken::Whitespace, span))
     }
 
-    /// Skip a block comment ("/*" to "*/")
-    fn skip_block_comment(&mut self) -> Result<(), PpLexerError<'src>> {
+    /// Lex a block comment ("/*" to "*/") as a Whitespace token
+    fn lex_block_comment(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let start_span = self.read_known_char('/')?.unwrap();
         self.read_known_char('*')?;
 
         // Read until "*/" or EOF
+        let mut end_span = start_span;
         loop {
             let Some(ch) = self.read_char()? else {
                 return Err(PpLexerError::UnterminatedBlockComment(start_span));
@@ -135,12 +166,14 @@ impl<'src> PpLexer<'src> {
                 && let Some(next) = self.peek_char()?
                 && next.value == '/'
             {
-                self.read_known_char('/')?;
+                end_span = self.read_known_char('/')?.unwrap();
                 break;
             }
+            end_span = ch.span;
         }
 
-        Ok(())
+        let span = Span::new(start_span.file, start_span.start, end_span.end);
+        Ok(Spanned::new(PreprocessingToken::Whitespace, span))
     }
 
     /// Read a pp-number
@@ -309,61 +342,59 @@ impl<'src> Iterator for PpLexer<'src> {
             return Some(Ok(token));
         }
 
-        loop {
-            // Peek next char
-            let ch = match self.peek_char() {
-                Ok(Some(c)) => *c,
-                Ok(None) => return None, // EOF
-                Err(e) => return Some(Err(e)),
-            };
+        // Peek next char
+        let ch = match self.peek_char() {
+            Ok(Some(c)) => *c,
+            Ok(None) => return None, // EOF
+            Err(e) => return Some(Err(e)),
+        };
 
-            // Skip whitespace (including newlines)
-            if matches!(ch.value, ' ' | '\t' | '\n' | '\x0B' | '\x0C') {
-                if let Err(e) = self.skip_whitespace() {
-                    return Some(Err(e));
-                }
-                continue;
+        // Check for newline first
+        if ch.value == '\n' {
+            return Some(self.lex_newline());
+        }
+
+        // Check for whitespace (not including newlines)
+        if Self::is_whitespace(ch.value) {
+            return Some(self.lex_whitespace());
+        }
+
+        // Check for comments (treated as whitespace)
+        if ch.value == '/'
+            && let Ok(Some(next)) = self.peek_n(1)
+        {
+            if next.value == '/' {
+                return Some(self.lex_line_comment());
             }
-
-            // Check for comments
-            if ch.value == '/'
-                && let Ok(Some(next)) = self.peek_n(1)
-            {
-                if next.value == '/' {
-                    if let Err(e) = self.skip_line_comment() {
-                        return Some(Err(e));
-                    }
-                    continue;
-                }
-                if next.value == '*' {
-                    if let Err(e) = self.skip_block_comment() {
-                        return Some(Err(e));
-                    }
-                    continue;
-                }
+            if next.value == '*' {
+                return Some(self.lex_block_comment());
             }
+        }
 
-            // Try identifier
-            if Self::is_identifier_start(ch.value) {
-                return Some(
-                    self.read_identifier()
-                        .map(|id| Spanned::new(PreprocessingToken::Identifier(id.value), id.span)),
-                );
-            }
-
-            // Try pp-number
-            if Self::is_pp_number_start(ch.value) {
-                return Some(
-                    self.read_pp_number()
-                        .map(|num| Spanned::new(PreprocessingToken::PpNumber(num.value), num.span)),
-                );
-            }
-
-            // Try punctuator
+        // Try identifier
+        if Self::is_identifier_start(ch.value) {
             return Some(
-                self.read_punctuator()
-                    .map(|p| Spanned::new(PreprocessingToken::Punctuator(p.value), p.span)),
+                self.read_identifier()
+                    .map(|id| Spanned::new(PreprocessingToken::Identifier(id.value), id.span)),
             );
+        }
+
+        // Try pp-number
+        if Self::is_pp_number_start(ch.value) {
+            return Some(
+                self.read_pp_number()
+                    .map(|num| Spanned::new(PreprocessingToken::PpNumber(num.value), num.span)),
+            );
+        }
+
+        // Try punctuator
+        match self.read_punctuator() {
+            Ok(p) => Some(Ok(Spanned::new(PreprocessingToken::Punctuator(p.value), p.span))),
+            Err(PpLexerError::UnexpectedChar(ch)) => {
+                // Fall back to OtherChar for any character not matching other categories
+                Some(Ok(Spanned::new(PreprocessingToken::OtherChar(ch.value), ch.span)))
+            }
+            Err(e) => Some(Err(e)),
         }
     }
 }
