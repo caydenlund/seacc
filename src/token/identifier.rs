@@ -4,6 +4,10 @@ use std::{borrow::Borrow, error::Error, fmt::Display};
 pub struct Identifier(String);
 
 impl Identifier {
+    /// Creates a new `Identifier` from the given string
+    ///
+    /// # Errors
+    /// Returns an error if `raw_ident` is not a valid C identifier.
     pub fn new(raw_ident: &str) -> Result<Self, IdentifierError> {
         let err = || Err(IdentifierError(raw_ident.into()));
 
@@ -25,6 +29,10 @@ impl Identifier {
         Ok(Self(raw_ident.into()))
     }
 
+    /// Creates a new `Identifier` without validity
+    ///
+    /// # Safety
+    /// `raw_ident` must be a valid C identifier.
     #[must_use]
     pub unsafe fn new_unchecked(raw_ident: &str) -> Self {
         Self(raw_ident.into())

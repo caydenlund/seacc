@@ -16,6 +16,10 @@ pub enum CharacterConstantPrefix {
 pub struct CharacterConstant(char, CharacterConstantPrefix);
 
 impl CharacterConstant {
+    /// Creates a new `CharacterConstant` from the given text
+    ///
+    /// # Errors
+    /// Returns an error if `raw_char_sequence` is not a valid character constant.
     pub fn new(raw_char_sequence: &str) -> Result<Self, CharacterConstantError> {
         // character-constant :: ' c-char-sequence '
         // character-constant :: L' c-char-sequence '
@@ -121,7 +125,11 @@ impl CharacterConstant {
         Ok(Self(result, prefix_type))
     }
 
-    pub fn from_parts(
+    /// Creates a new `CharacterConstant` with the given prefix and contents
+    ///
+    /// # Errors
+    /// Returns an error if `ch` is not valid for the given `prefix`.
+    pub const fn from_parts(
         ch: char,
         prefix: CharacterConstantPrefix,
     ) -> Result<Self, CharacterConstantError> {

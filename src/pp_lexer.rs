@@ -92,25 +92,12 @@ impl<'src> PpLexer<'src> {
         ch.is_ascii_digit()
     }
 
-    /// Skip whitespace characters (including newlines)
-    fn skip_whitespace(&mut self) -> Result<(), PpLexerError<'src>> {
-        while let Some(ch) = self.peek_char()? {
-            match ch.value {
-                ' ' | '\t' | '\n' | '\x0B' | '\x0C' => {
-                    self.read_char()?;
-                }
-                _ => break,
-            }
-        }
-        Ok(())
-    }
-
-    /// Check if a character is whitespace (not including newline)
+    /// Check whether a character is whitespace (not including newline)
     const fn is_whitespace(ch: char) -> bool {
         matches!(ch, ' ' | '\t' | '\x0B' | '\x0C')
     }
 
-    /// Lex consecutive whitespace characters (not including newlines) into a single Whitespace token
+    /// Lex consecutive whitespace characters (not including newlines) into a single `Whitespace` token
     fn lex_whitespace(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let first = self.read_char()?.unwrap();
         let mut span = first.span;
@@ -127,15 +114,17 @@ impl<'src> PpLexer<'src> {
         Ok(Spanned::new(PreprocessingToken::Whitespace, span))
     }
 
-    /// Lex a newline character into a Newline token
+    /// Lex a newline character into a `Newline` token
     fn lex_newline(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let ch = self.read_char()?.unwrap();
         assert_eq!(ch.value, '\n');
         Ok(Spanned::new(PreprocessingToken::Newline, ch.span))
     }
 
-    /// Lex a line comment ("//" until newline) as a Whitespace token
-    fn lex_line_comment(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+    /// Lex a line comment ("//" until newline) as a `Whitespace` token
+    fn lex_line_comment(
+        &mut self,
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let start_span = self.read_known_char('/')?.unwrap();
         let mut end_span = self.read_known_char('/')?.unwrap();
 
@@ -150,13 +139,14 @@ impl<'src> PpLexer<'src> {
         Ok(Spanned::new(PreprocessingToken::Whitespace, span))
     }
 
-    /// Lex a block comment ("/*" to "*/") as a Whitespace token
-    fn lex_block_comment(&mut self) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+    /// Lex a block comment ("/*" to "*/") as a `Whitespace` token
+    fn lex_block_comment(
+        &mut self,
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let start_span = self.read_known_char('/')?.unwrap();
         self.read_known_char('*')?;
 
         // Read until "*/" or EOF
-        let mut end_span = start_span;
         loop {
             let Some(ch) = self.read_char()? else {
                 return Err(PpLexerError::UnterminatedBlockComment(start_span));
@@ -166,14 +156,11 @@ impl<'src> PpLexer<'src> {
                 && let Some(next) = self.peek_char()?
                 && next.value == '/'
             {
-                end_span = self.read_known_char('/')?.unwrap();
-                break;
+                let end_span = self.read_known_char('/')?.unwrap();
+                let span = Span::new(start_span.file, start_span.start, end_span.end);
+                return Ok(Spanned::new(PreprocessingToken::Whitespace, span));
             }
-            end_span = ch.span;
         }
-
-        let span = Span::new(start_span.file, start_span.start, end_span.end);
-        Ok(Spanned::new(PreprocessingToken::Whitespace, span))
     }
 
     /// Read a pp-number
@@ -389,10 +376,16 @@ impl<'src> Iterator for PpLexer<'src> {
 
         // Try punctuator
         match self.read_punctuator() {
-            Ok(p) => Some(Ok(Spanned::new(PreprocessingToken::Punctuator(p.value), p.span))),
+            Ok(p) => Some(Ok(Spanned::new(
+                PreprocessingToken::Punctuator(p.value),
+                p.span,
+            ))),
             Err(PpLexerError::UnexpectedChar(ch)) => {
-                // Fall back to OtherChar for any character not matching other categories
-                Some(Ok(Spanned::new(PreprocessingToken::OtherChar(ch.value), ch.span)))
+                // Fall back to `OtherChar` for any character not matching other categories
+                Some(Ok(Spanned::new(
+                    PreprocessingToken::OtherChar(ch.value),
+                    ch.span,
+                )))
             }
             Err(e) => Some(Err(e)),
         }

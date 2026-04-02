@@ -207,15 +207,15 @@ impl<'src> SourceReader<'src> {
         };
 
         // CRLF normalization
-        if ch.value == '\r' {
-            if let Some(next) = self.read_raw_char()? {
-                if next.value == '\n' {
-                    // Merge "\r\n" into single "\n" with combined span
-                    let span = Span::new(self.file_path, ch.span.start, next.span.end);
-                    return Ok(Some(Spanned::new('\n', span)));
-                }
-                self.lookahead.push_back(next);
+        if ch.value == '\r'
+            && let Some(next) = self.read_raw_char()?
+        {
+            if next.value == '\n' {
+                // Merge "\r\n" into single "\n" with combined span
+                let span = Span::new(self.file_path, ch.span.start, next.span.end);
+                return Ok(Some(Spanned::new('\n', span)));
             }
+            self.lookahead.push_back(next);
         }
 
         Ok(Some(ch))
@@ -239,10 +239,10 @@ impl<'src> Iterator for SourceReader<'src> {
                 Ok(None) => {
                     // Reached EOF - validate phase 2 requirements:
                     // "A source file that is not empty shall end in a new-line character"
-                    if let Some(last_ch) = self.last_output_char {
-                        if last_ch != '\n' {
-                            return Some(Err(SourceError::MissingFinalNewline));
-                        }
+                    if let Some(last_ch) = self.last_output_char
+                        && last_ch != '\n'
+                    {
+                        return Some(Err(SourceError::MissingFinalNewline));
                     }
                     return None;
                 }

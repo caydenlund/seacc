@@ -49,6 +49,10 @@ pub enum Keyword {
 }
 
 impl Keyword {
+    /// Creates a new `Keyword` with variant selected based on text
+    ///
+    /// # Errors
+    /// Returns an error if `raw_keyword` is not a recognized C keyword.
     pub fn new(raw_keyword: &str) -> Result<Self, KeywordError> {
         match raw_keyword {
             "auto" => Ok(Self::Auto),
