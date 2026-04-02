@@ -294,19 +294,21 @@ impl<'src> PpLexer<'src> {
         Ok(Span::new(first.span.file, first.span.start, last.span.end))
     }
 
-    /// Helper to create a multi-char punctuator
+    /// Helper to create a multi-char punctuator token
     fn mk_punct(
         &mut self,
         first: Spanned<'src, char>,
         count: usize,
         punct: Punctuator,
-    ) -> Result<Spanned<'src, Punctuator>, PpLexerError<'src>> {
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let span = self.consume_and_span(first, count)?;
-        Ok(Spanned::new(punct, span))
+        Ok(Spanned::new(PreprocessingToken::Punctuator(punct), span))
     }
 
-    /// Read a punctuator with longest match
-    fn read_punctuator(&mut self) -> Result<Spanned<'src, Punctuator>, PpLexerError<'src>> {
+    /// Read the next token as a punctuator or, if no punctuator matches, an `OtherChar`
+    fn read_punctuator_or_other(
+        &mut self,
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
         let first = self.read_char()?.unwrap();
 
         // Copy values of next 3 chars
@@ -316,6 +318,7 @@ impl<'src> PpLexer<'src> {
             self.peek_n(2)?.map(|ch| ch.value),
         ];
 
+        let p = |punct| Ok(Spanned::new(PreprocessingToken::Punctuator(punct), first.span));
         match (first.value, vals[0], vals[1], vals[2]) {
             // 4-char digraph:
             ('%', Some(':'), Some('%'), Some(':')) => self.mk_punct(first, 3, Punctuator::HashHash),
@@ -349,32 +352,32 @@ impl<'src> PpLexer<'src> {
             ('&', Some('='), _, _) => self.mk_punct(first, 1, Punctuator::BitAndAssign),
             ('%', Some(':'), _, _) => self.mk_punct(first, 1, Punctuator::Hash),
             ('#', Some('#'), _, _) => self.mk_punct(first, 1, Punctuator::HashHash),
-            ('[', _, _, _) => Ok(Spanned::new(Punctuator::LBracket, first.span)),
-            (']', _, _, _) => Ok(Spanned::new(Punctuator::RBracket, first.span)),
-            ('(', _, _, _) => Ok(Spanned::new(Punctuator::LParen, first.span)),
-            (')', _, _, _) => Ok(Spanned::new(Punctuator::RParen, first.span)),
-            ('{', _, _, _) => Ok(Spanned::new(Punctuator::LCurly, first.span)),
-            ('}', _, _, _) => Ok(Spanned::new(Punctuator::RCurly, first.span)),
-            ('.', _, _, _) => Ok(Spanned::new(Punctuator::Dot, first.span)),
-            ('&', _, _, _) => Ok(Spanned::new(Punctuator::Amp, first.span)),
-            ('*', _, _, _) => Ok(Spanned::new(Punctuator::Asterisk, first.span)),
-            ('+', _, _, _) => Ok(Spanned::new(Punctuator::Plus, first.span)),
-            ('-', _, _, _) => Ok(Spanned::new(Punctuator::Minus, first.span)),
-            ('~', _, _, _) => Ok(Spanned::new(Punctuator::Tilde, first.span)),
-            ('!', _, _, _) => Ok(Spanned::new(Punctuator::Exclamation, first.span)),
-            ('/', _, _, _) => Ok(Spanned::new(Punctuator::Slash, first.span)),
-            ('%', _, _, _) => Ok(Spanned::new(Punctuator::Percent, first.span)),
-            ('<', _, _, _) => Ok(Spanned::new(Punctuator::Lt, first.span)),
-            ('>', _, _, _) => Ok(Spanned::new(Punctuator::Gt, first.span)),
-            ('^', _, _, _) => Ok(Spanned::new(Punctuator::BitXor, first.span)),
-            ('|', _, _, _) => Ok(Spanned::new(Punctuator::BitOr, first.span)),
-            ('?', _, _, _) => Ok(Spanned::new(Punctuator::Question, first.span)),
-            (':', _, _, _) => Ok(Spanned::new(Punctuator::Colon, first.span)),
-            (';', _, _, _) => Ok(Spanned::new(Punctuator::Semicolon, first.span)),
-            ('=', _, _, _) => Ok(Spanned::new(Punctuator::Assign, first.span)),
-            (',', _, _, _) => Ok(Spanned::new(Punctuator::Comma, first.span)),
-            ('#', _, _, _) => Ok(Spanned::new(Punctuator::Hash, first.span)),
-            _ => Err(PpLexerError::UnexpectedChar(first)),
+            ('[', _, _, _) => p(Punctuator::LBracket),
+            (']', _, _, _) => p(Punctuator::RBracket),
+            ('(', _, _, _) => p(Punctuator::LParen),
+            (')', _, _, _) => p(Punctuator::RParen),
+            ('{', _, _, _) => p(Punctuator::LCurly),
+            ('}', _, _, _) => p(Punctuator::RCurly),
+            ('.', _, _, _) => p(Punctuator::Dot),
+            ('&', _, _, _) => p(Punctuator::Amp),
+            ('*', _, _, _) => p(Punctuator::Asterisk),
+            ('+', _, _, _) => p(Punctuator::Plus),
+            ('-', _, _, _) => p(Punctuator::Minus),
+            ('~', _, _, _) => p(Punctuator::Tilde),
+            ('!', _, _, _) => p(Punctuator::Exclamation),
+            ('/', _, _, _) => p(Punctuator::Slash),
+            ('%', _, _, _) => p(Punctuator::Percent),
+            ('<', _, _, _) => p(Punctuator::Lt),
+            ('>', _, _, _) => p(Punctuator::Gt),
+            ('^', _, _, _) => p(Punctuator::BitXor),
+            ('|', _, _, _) => p(Punctuator::BitOr),
+            ('?', _, _, _) => p(Punctuator::Question),
+            (':', _, _, _) => p(Punctuator::Colon),
+            (';', _, _, _) => p(Punctuator::Semicolon),
+            ('=', _, _, _) => p(Punctuator::Assign),
+            (',', _, _, _) => p(Punctuator::Comma),
+            ('#', _, _, _) => p(Punctuator::Hash),
+            _ => Ok(Spanned::new(PreprocessingToken::OtherChar(first.value), first.span)),
         }
     }
 }
@@ -448,20 +451,7 @@ impl<'src> Iterator for PpLexer<'src> {
             );
         }
 
-        // Try punctuator
-        match self.read_punctuator() {
-            Ok(p) => Some(Ok(Spanned::new(
-                PreprocessingToken::Punctuator(p.value),
-                p.span,
-            ))),
-            Err(PpLexerError::UnexpectedChar(ch)) => {
-                // Fall back to `OtherChar` for any character not matching other categories
-                Some(Ok(Spanned::new(
-                    PreprocessingToken::OtherChar(ch.value),
-                    ch.span,
-                )))
-            }
-            Err(e) => Some(Err(e)),
-        }
+        // Try punctuator, falling back to `OtherChar` for unrecognized characters
+        Some(self.read_punctuator_or_other())
     }
 }
