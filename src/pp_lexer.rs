@@ -165,37 +165,34 @@ impl<'src> PpLexer<'src> {
 
     /// Read a pp-number
     fn read_pp_number(&mut self) -> Result<Spanned<'src, String>, PpLexerError<'src>> {
-        // TODO: finish implementation?
-
-        // [digit]
-        // . [digit]
-        // [pp-number] [digit]
-        // [pp-number] [identifier-nondigit]
-        // [pp-number] e [sign]
-        // [pp-number] E [sign]
-        // [pp-number] p [sign]
-        // [pp-number] P [sign]
-        // [pp-number] .
         let mut chars = String::new();
         let first = self.read_char()?.unwrap();
-        let start = first.span.start;
+        let mut span = first.span;
         chars.push(first.value);
 
-        while let Some(ch) = self.peek_char()? {
-            if Self::is_identifier_continue(ch.value) {
-                chars.push(self.read_char()?.unwrap().value);
+        while let Some(peek) = self.peek_char()? {
+            let pv = peek.value;
+
+            if matches!(pv, 'e' | 'E' | 'p' | 'P') {
+                // Consume the exponent indicator, then optionally a sign
+                let exp = self.read_char()?.unwrap();
+                span.end = exp.span.end;
+                chars.push(exp.value);
+                if let Some(next) = self.peek_char()?
+                    && matches!(next.value, '+' | '-')
+                {
+                    let sign = self.read_char()?.unwrap();
+                    span.end = sign.span.end;
+                    chars.push(sign.value);
+                }
+            } else if pv == '.' || pv.is_ascii_digit() || Self::is_identifier_continue(pv) {
+                let ch = self.read_char()?.unwrap();
+                span.end = ch.span.end;
+                chars.push(ch.value);
             } else {
                 break;
             }
         }
-
-        let end = self.lookahead.front().map_or_else(
-            #[allow(clippy::cast_possible_truncation)]
-            || crate::span::ByteOffset(start.0 + chars.len() as u32),
-            |ch| ch.span.start,
-        );
-
-        let span = Span::new(first.span.file, start, end);
 
         Ok(Spanned::new(chars, span))
     }
@@ -366,8 +363,11 @@ impl<'src> Iterator for PpLexer<'src> {
             );
         }
 
-        // Try pp-number
-        if Self::is_pp_number_start(ch.value) {
+        // Try pp-number (digit or . digit)
+        if Self::is_pp_number_start(ch.value)
+            || (ch.value == '.'
+                && matches!(self.peek_n(1), Ok(Some(next)) if next.value.is_ascii_digit()))
+        {
             return Some(
                 self.read_pp_number()
                     .map(|num| Spanned::new(PreprocessingToken::PpNumber(num.value), num.span)),

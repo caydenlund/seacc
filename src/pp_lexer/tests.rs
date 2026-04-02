@@ -21,7 +21,7 @@ fn lex_str(input: &str) -> Result<Vec<PreprocessingToken>, String> {
 #[test]
 fn test_simple_identifier() {
     let tokens = lex_str("foo").unwrap();
-    assert_eq!(tokens.len(), 2); // foo + newline
+    assert_eq!(tokens.len(), 2); // "foo", newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "foo");
@@ -33,7 +33,7 @@ fn test_simple_identifier() {
 #[test]
 fn test_identifier_with_underscore() {
     let tokens = lex_str("_bar").unwrap();
-    assert_eq!(tokens.len(), 2); // _bar + newline
+    assert_eq!(tokens.len(), 2); // "_bar", newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "_bar");
@@ -45,7 +45,7 @@ fn test_identifier_with_underscore() {
 #[test]
 fn test_identifier_with_numbers() {
     let tokens = lex_str("test123").unwrap();
-    assert_eq!(tokens.len(), 2); // test123 + newline
+    assert_eq!(tokens.len(), 2); // "test123", newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "test123");
@@ -57,7 +57,7 @@ fn test_identifier_with_numbers() {
 #[test]
 fn test_underscore_only() {
     let tokens = lex_str("_").unwrap();
-    assert_eq!(tokens.len(), 2); // _ + newline
+    assert_eq!(tokens.len(), 2); // "_", newline
     match &tokens[0] {
         PreprocessingToken::Identifier(id) => {
             assert_eq!(id.as_ref(), "_");
@@ -98,7 +98,7 @@ fn test_single_char_punctuators() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator + newline
+        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator, newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -141,7 +141,7 @@ fn test_multi_char_punctuators() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator + newline
+        assert_eq!(tokens.len(), 2, "Failed for input: {input}"); // punctuator, newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -167,7 +167,7 @@ fn test_digraphs() {
 
     for (input, expected) in test_cases {
         let tokens = lex_str(input).unwrap();
-        assert_eq!(tokens.len(), 2, "Failed for digraph: {input}"); // digraph + newline
+        assert_eq!(tokens.len(), 2, "Failed for digraph: {input}"); // digraph, newline
         match &tokens[0] {
             PreprocessingToken::Punctuator(p) => {
                 assert!(
@@ -182,17 +182,15 @@ fn test_digraphs() {
 
 #[test]
 fn test_longest_match() {
-    // Test that "<<=" is lexed as one token, not "<<" + "="
     let tokens = lex_str("<<=").unwrap();
-    assert_eq!(tokens.len(), 2); // <<= + newline
+    assert_eq!(tokens.len(), 2); // "<<=", newline
     match &tokens[0] {
         PreprocessingToken::Punctuator(Punctuator::LShiftAssign) => {}
         _ => panic!("Expected LShiftAssign"),
     }
 
-    // Test that "++" is one token
     let tokens = lex_str("++").unwrap();
-    assert_eq!(tokens.len(), 2); // ++ + newline
+    assert_eq!(tokens.len(), 2); // "++", newline
     match &tokens[0] {
         PreprocessingToken::Punctuator(Punctuator::Incr) => {}
         _ => panic!("Expected Incr"),
@@ -202,7 +200,7 @@ fn test_longest_match() {
 #[test]
 fn test_whitespace_tokens() {
     let tokens = lex_str("foo  \t  bar").unwrap();
-    assert_eq!(tokens.len(), 4); // foo + whitespace + bar + newline
+    assert_eq!(tokens.len(), 4); // "foo", space, "bar", newline
     match (&tokens[0], &tokens[1], &tokens[2]) {
         (
             PreprocessingToken::Identifier(id1),
@@ -219,7 +217,7 @@ fn test_whitespace_tokens() {
 #[test]
 fn test_line_comment() {
     let tokens = lex_str("foo // comment\nbar").unwrap();
-    // foo + space + comment + newline + bar + newline(from writeln!)
+    // "foo", "space", comment, newline, "bar", newline
     assert_eq!(tokens.len(), 6);
     match &tokens[..] {
         [
@@ -228,7 +226,7 @@ fn test_line_comment() {
             PreprocessingToken::Whitespace, // comment itself
             PreprocessingToken::Newline,    // explicit newline
             PreprocessingToken::Identifier(id2),
-            PreprocessingToken::Newline, // from writeln!
+            PreprocessingToken::Newline, // from `writeln!`
         ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
@@ -240,14 +238,14 @@ fn test_line_comment() {
 #[test]
 fn test_block_comment() {
     let tokens = lex_str("foo/*comment*/bar").unwrap();
-    // foo + comment + bar + newline(from writeln!)
+    // "foo", comment, "bar", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[..] {
         [
             PreprocessingToken::Identifier(id1),
             PreprocessingToken::Whitespace, // comment
             PreprocessingToken::Identifier(id2),
-            PreprocessingToken::Newline, // from writeln!
+            PreprocessingToken::Newline, // from `writeln!`
         ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
@@ -259,14 +257,14 @@ fn test_block_comment() {
 #[test]
 fn test_block_comment_multiline() {
     let tokens = lex_str("foo/*line1\nline2*/bar").unwrap();
-    // foo + comment + bar + newline(from writeln!)
+    // "foo", comment, "bar", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[..] {
         [
             PreprocessingToken::Identifier(id1),
             PreprocessingToken::Whitespace, // comment (with embedded newline)
             PreprocessingToken::Identifier(id2),
-            PreprocessingToken::Newline, // from writeln!
+            PreprocessingToken::Newline, // from `writeln!`
         ] => {
             assert_eq!(id1.as_ref(), "foo");
             assert_eq!(id2.as_ref(), "bar");
@@ -286,7 +284,7 @@ fn test_unterminated_block_comment() {
 #[test]
 fn test_complex_expression() {
     let tokens = lex_str("x = y + 42;").unwrap();
-    // x + space + = + space + y + space + + + space + 42 + ; + newline = 11 tokens
+    // "x", space, "=", space, "y", space, "+", space, "42", ";", newline
     assert_eq!(tokens.len(), 11);
 
     match &tokens[..] {
@@ -313,9 +311,8 @@ fn test_complex_expression() {
 
 #[test]
 fn test_digraph_in_expression() {
-    // "<:0:>" should be "[", "0", "]" + newline
     let tokens = lex_str("<:0:>").unwrap();
-    assert_eq!(tokens.len(), 4); // [ + 0 + ] + newline
+    assert_eq!(tokens.len(), 4); // "[", "0", "]", newline
 
     match &tokens[..] {
         [
@@ -332,7 +329,7 @@ fn test_digraph_in_expression() {
 
 #[test]
 fn test_adjacent_operators() {
-    // "<<=" should be one token + newline
+    // "<<=", newline
     let tokens = lex_str("<<=").unwrap();
     assert_eq!(tokens.len(), 2);
     match &tokens[..] {
@@ -343,7 +340,7 @@ fn test_adjacent_operators() {
         _ => panic!("Unexpected tokens: {tokens:?}"),
     }
 
-    // "< <=" should be three tokens: < + space + <= + newline
+    // "<", space, "<=", newline
     let tokens = lex_str("< <=").unwrap();
     assert_eq!(tokens.len(), 4);
     match &tokens[..] {
@@ -357,14 +354,10 @@ fn test_adjacent_operators() {
     }
 }
 
-// ============================================================================
-// OTHER CHAR TESTS (previously unexpected characters, now valid OtherChar tokens)
-// ============================================================================
-
 #[test]
 fn test_other_char_at_sign() {
     let tokens = lex_str("foo @ bar").unwrap();
-    // foo + space + @ + space + bar + newline
+    // "foo", space, "@", space, "bar", newline
     assert_eq!(tokens.len(), 6);
     match &tokens[2] {
         PreprocessingToken::OtherChar('@') => {}
@@ -375,7 +368,7 @@ fn test_other_char_at_sign() {
 #[test]
 fn test_other_char_dollar() {
     let tokens = lex_str("$var").unwrap();
-    // $ + var + newline
+    // "$", "var", newline
     assert_eq!(tokens.len(), 3);
     match &tokens[0] {
         PreprocessingToken::OtherChar('$') => {}
@@ -386,7 +379,7 @@ fn test_other_char_dollar() {
 #[test]
 fn test_other_char_backtick() {
     let tokens = lex_str("`command`").unwrap();
-    // ` + command + ` + newline
+    // "`", "command", "`", newline
     assert_eq!(tokens.len(), 4);
     match (&tokens[0], &tokens[2]) {
         (PreprocessingToken::OtherChar('`'), PreprocessingToken::OtherChar('`')) => {}
@@ -397,7 +390,7 @@ fn test_other_char_backtick() {
 #[test]
 fn test_other_char_backslash() {
     let tokens = lex_str("foo \\ bar").unwrap();
-    // foo + space + \ + space + bar + newline
+    // "foo", space, "\", space, "bar", newline
     assert_eq!(tokens.len(), 6);
     match &tokens[2] {
         PreprocessingToken::OtherChar('\\') => {}
@@ -408,7 +401,7 @@ fn test_other_char_backslash() {
 #[test]
 fn test_other_char_in_expression() {
     let tokens = lex_str("x = y @ 42").unwrap();
-    // Contains @ as OtherChar
+    // Contains "@" as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
@@ -421,7 +414,7 @@ fn test_other_char_in_expression() {
 #[test]
 fn test_other_char_after_valid_tokens() {
     let tokens = lex_str("int x; $ int y;").unwrap();
-    // Contains $ as OtherChar
+    // Contains "$" as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('$')))
@@ -434,7 +427,7 @@ fn test_other_char_after_valid_tokens() {
 #[test]
 fn test_other_char_unicode_snowman() {
     let tokens = lex_str("foo ☃ bar").unwrap();
-    // Contains snowman as OtherChar
+    // Contains snowman as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('☃')))
@@ -519,7 +512,7 @@ fn test_unterminated_block_comment_after_code() {
 fn test_multiple_other_chars() {
     // Both @ and $ become OtherChar tokens
     let tokens = lex_str("@ $").unwrap();
-    // @ + space + $ + newline
+    // "@", space, "$", newline
     assert_eq!(tokens.len(), 4);
     match (&tokens[0], &tokens[2]) {
         (PreprocessingToken::OtherChar('@'), PreprocessingToken::OtherChar('$')) => {}
@@ -530,7 +523,7 @@ fn test_multiple_other_chars() {
 #[test]
 fn test_other_char_between_valid_operators() {
     let tokens = lex_str("x + @ - y").unwrap();
-    // Contains @ as OtherChar
+    // Contains "@" as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
@@ -542,19 +535,14 @@ fn test_other_char_between_valid_operators() {
 
 #[test]
 fn test_other_char_after_slash() {
-    // Slash followed by @
-    let tokens = lex_str("/ @ comment").unwrap();
-    // / + space + @ + space + comment + newline
-    match (
-        tokens
-            .iter()
-            .find(|t| matches!(t, PreprocessingToken::Punctuator(Punctuator::Slash))),
-        tokens
-            .iter()
-            .find(|t| matches!(t, PreprocessingToken::OtherChar('@'))),
-    ) {
-        (Some(_), Some(_)) => {}
-        _ => panic!("Expected Slash punctuator and OtherChar('@'), got {tokens:?}"),
+    let tokens = lex_str("/@").unwrap();
+    assert_eq!(tokens.len(), 3); // "/", "@", newline
+    match (&tokens[0], &tokens[1]) {
+        (
+            PreprocessingToken::Punctuator(Punctuator::Slash),
+            PreprocessingToken::OtherChar('@'),
+        ) => {}
+        _ => panic!("Expected Slash then OtherChar('@'), got {tokens:?}"),
     }
 }
 
@@ -569,7 +557,7 @@ fn test_unterminated_with_slash_not_after_star() {
 #[test]
 fn test_other_char_grave_accent() {
     let tokens = lex_str("foo`bar").unwrap();
-    // foo + ` + bar + newline
+    // "foo", "`", "bar", newline
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('`')))
@@ -581,7 +569,7 @@ fn test_other_char_grave_accent() {
 
 #[test]
 fn test_other_char_at_operator_position() {
-    // '@' in a binary operator position
+    // "@" in a binary operator position
     let tokens = lex_str("a @ b").unwrap();
     match tokens
         .iter()
@@ -607,7 +595,7 @@ fn test_other_char_pound_sterling() {
 #[test]
 fn test_other_char_euro_symbol() {
     let tokens = lex_str("€100").unwrap();
-    // € + 100 + newline
+    // "€", "100", newline
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('€')))
@@ -636,7 +624,7 @@ fn test_unterminated_block_comment_only_slash() {
 #[test]
 fn test_other_char_after_number() {
     let tokens = lex_str("123@456").unwrap();
-    // 123 + @ + 456 + newline
+    // "123", "@", "456", newline
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('@')))
@@ -735,7 +723,7 @@ fn test_other_char_after_complete_statement() {
 #[test]
 fn test_other_char_tilde_accent() {
     let tokens = lex_str("señor ñ").unwrap();
-    // Contains ñ as OtherChar
+    // Contains "ñ" as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('ñ')))
@@ -760,7 +748,7 @@ fn test_other_char_at_end_of_file() {
 #[test]
 fn test_other_char_circumflex_accent() {
     let tokens = lex_str("café").unwrap();
-    // Contains é as OtherChar
+    // Contains "é" as `OtherChar`
     match tokens
         .iter()
         .find(|t| matches!(t, PreprocessingToken::OtherChar('é')))
@@ -813,7 +801,7 @@ fn test_unterminated_comment_star_at_eof() {
 #[test]
 fn test_other_char_chinese_character() {
     let tokens = lex_str("int 变量 = 5;").unwrap();
-    // Contains Chinese characters as OtherChar tokens
+    // Contains Chinese characters as `OtherChar` tokens
     let has_chinese = tokens
         .iter()
         .any(|t| matches!(t, PreprocessingToken::OtherChar(c) if *c == '变' || *c == '量'));
@@ -826,7 +814,7 @@ fn test_other_char_chinese_character() {
 #[test]
 fn test_other_char_arabic_character() {
     let tokens = lex_str("int متغير = 5;").unwrap();
-    // Contains Arabic characters as OtherChar tokens
+    // Contains Arabic characters as `OtherChar` tokens
     let has_arabic = tokens
         .iter()
         .any(|t| matches!(t, PreprocessingToken::OtherChar(c) if *c >= 'ا' && *c <= 'ي'));
@@ -955,14 +943,10 @@ fn test_unterminated_block_comment_documentation_style_incomplete() {
     assert!(err.contains("unterminated block comment"));
 }
 
-// ============================================================================
-// WHITESPACE AND NEWLINE TESTS
-// ============================================================================
-
 #[test]
 fn test_single_space_whitespace() {
     let tokens = lex_str("a b").unwrap();
-    // a + space + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -973,7 +957,7 @@ fn test_single_space_whitespace() {
 #[test]
 fn test_multiple_spaces_collapsed() {
     let tokens = lex_str("a     b").unwrap();
-    // a + whitespace(collapsed) + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -987,7 +971,7 @@ fn test_multiple_spaces_collapsed() {
 #[test]
 fn test_tabs_collapsed() {
     let tokens = lex_str("a\t\t\tb").unwrap();
-    // a + whitespace(collapsed tabs) + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -1001,7 +985,7 @@ fn test_tabs_collapsed() {
 #[test]
 fn test_mixed_whitespace_collapsed() {
     let tokens = lex_str("a  \t  \t  b").unwrap();
-    // a + whitespace(mixed spaces and tabs) + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -1015,7 +999,7 @@ fn test_mixed_whitespace_collapsed() {
 #[test]
 fn test_newline_token() {
     let tokens = lex_str("a\nb").unwrap();
-    // a + newline + b + newline(from writeln!)
+    // "a", newline, "b", newline
     assert_eq!(tokens.len(), 4);
     match (&tokens[1], &tokens[3]) {
         (PreprocessingToken::Newline, PreprocessingToken::Newline) => {}
@@ -1026,7 +1010,7 @@ fn test_newline_token() {
 #[test]
 fn test_whitespace_not_newline() {
     let tokens = lex_str("a \nb").unwrap();
-    // a + space + newline + b + newline
+    // "a", space, newline, "b", newline
     assert_eq!(tokens.len(), 5);
     match (&tokens[1], &tokens[2]) {
         (PreprocessingToken::Whitespace, PreprocessingToken::Newline) => {}
@@ -1037,7 +1021,7 @@ fn test_whitespace_not_newline() {
 #[test]
 fn test_vertical_tab_as_whitespace() {
     let tokens = lex_str("a\x0Bb").unwrap();
-    // a + vertical tab + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -1048,7 +1032,7 @@ fn test_vertical_tab_as_whitespace() {
 #[test]
 fn test_form_feed_as_whitespace() {
     let tokens = lex_str("a\x0Cb").unwrap();
-    // a + form feed + b + newline
+    // "a", space, "b", newline
     assert_eq!(tokens.len(), 4);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
@@ -1059,7 +1043,7 @@ fn test_form_feed_as_whitespace() {
 #[test]
 fn test_multiple_newlines() {
     let tokens = lex_str("\n\n\n").unwrap();
-    // 3 explicit newlines + 1 from writeln! = 4 newlines
+    // 3 explicit newlines + 1 from `writeln!` = 4 newlines
     assert_eq!(tokens.len(), 4);
     for (i, token) in tokens.iter().enumerate() {
         match token {
@@ -1072,7 +1056,7 @@ fn test_multiple_newlines() {
 #[test]
 fn test_whitespace_at_start() {
     let tokens = lex_str("   foo").unwrap();
-    // whitespace + foo + newline
+    // space, "foo", newline
     assert_eq!(tokens.len(), 3);
     match &tokens[0] {
         PreprocessingToken::Whitespace => {}
@@ -1083,10 +1067,111 @@ fn test_whitespace_at_start() {
 #[test]
 fn test_whitespace_at_end() {
     let tokens = lex_str("foo   ").unwrap();
-    // foo + whitespace + newline
+    // "foo", space, newline
     assert_eq!(tokens.len(), 3);
     match &tokens[1] {
         PreprocessingToken::Whitespace => {}
         _ => panic!("Expected Whitespace at end, got {:?}", tokens[1]),
+    }
+}
+
+fn assert_pp_number(input: &str, expected: &str) {
+    let tokens = lex_str(input).unwrap();
+    match &tokens[0] {
+        PreprocessingToken::PpNumber(n) => assert_eq!(n, expected, "input: {input:?}"),
+        t => panic!("Expected PpNumber({expected:?}), got {t:?} for input {input:?}"),
+    }
+}
+
+#[test]
+fn test_pp_number_integer() {
+    assert_pp_number("42", "42");
+    assert_pp_number("0", "0");
+    assert_pp_number("1234567890", "1234567890");
+}
+
+#[test]
+fn test_pp_number_hex() {
+    assert_pp_number("0xDEAD", "0xDEAD");
+    assert_pp_number("0xFF", "0xFF");
+    assert_pp_number("0x1a2b3c", "0x1a2b3c");
+}
+
+#[test]
+fn test_pp_number_decimal_float() {
+    assert_pp_number("3.14", "3.14");
+    assert_pp_number("0.5", "0.5");
+    assert_pp_number("1.", "1.");
+}
+
+#[test]
+fn test_pp_number_dot_digit_start() {
+    assert_pp_number(".5", ".5");
+    assert_pp_number(".0", ".0");
+    assert_pp_number(".123", ".123");
+}
+
+#[test]
+fn test_pp_number_exponent() {
+    assert_pp_number("1e10", "1e10");
+    assert_pp_number("1E10", "1E10");
+    assert_pp_number("1.5e10", "1.5e10");
+}
+
+#[test]
+fn test_pp_number_exponent_with_sign() {
+    assert_pp_number("1e+10", "1e+10");
+    assert_pp_number("1e-10", "1e-10");
+    assert_pp_number("1.5E+3", "1.5E+3");
+    assert_pp_number("1.5E-3", "1.5E-3");
+}
+
+#[test]
+fn test_pp_number_binary_exponent() {
+    assert_pp_number("0x1p10", "0x1p10");
+    assert_pp_number("0x1P10", "0x1P10");
+    assert_pp_number("0x1.8p+1", "0x1.8p+1");
+    assert_pp_number("0x1.8P-2", "0x1.8P-2");
+}
+
+#[test]
+fn test_pp_number_with_suffix() {
+    assert_pp_number("42u", "42u");
+    assert_pp_number("42UL", "42UL");
+    assert_pp_number("42ll", "42ll");
+    assert_pp_number("1.5f", "1.5f");
+    assert_pp_number("1.5F", "1.5F");
+    assert_pp_number("1.5L", "1.5L");
+}
+
+#[test]
+fn test_pp_number_dot_not_followed_by_digit() {
+    // A lone "." should be a `Dot` punctuator, not a pp-number
+    let tokens = lex_str(".").unwrap();
+    match &tokens[0] {
+        PreprocessingToken::Punctuator(Punctuator::Dot) => {}
+        t => panic!("Expected Dot punctuator, got {t:?}"),
+    }
+}
+
+#[test]
+fn test_pp_number_dot_followed_by_identifier() {
+    let tokens = lex_str(".foo").unwrap();
+    assert_eq!(tokens.len(), 3); // ".", "foo", newline
+    match (&tokens[0], &tokens[1]) {
+        (PreprocessingToken::Punctuator(Punctuator::Dot), PreprocessingToken::Identifier(_)) => {}
+        _ => panic!("Expected Dot then Identifier, got {tokens:?}"),
+    }
+}
+
+#[test]
+fn test_pp_number_stops_at_non_number_char() {
+    let tokens = lex_str("42+").unwrap();
+    assert_eq!(tokens.len(), 3); // "42", "+", newline
+    match (&tokens[0], &tokens[1]) {
+        (PreprocessingToken::PpNumber(n), PreprocessingToken::Punctuator(Punctuator::Plus)) => {
+            assert_eq!(n, "42");
+        }
+        _ => panic!("Expected PpNumber then Plus, got {tokens:?}"),
     }
 }
