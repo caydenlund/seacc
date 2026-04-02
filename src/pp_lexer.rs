@@ -8,6 +8,7 @@ use crate::token::{
     StringLiteralEncoding,
 };
 use std::collections::VecDeque;
+use std::io::BufRead;
 
 #[cfg(test)]
 mod tests;
@@ -15,18 +16,18 @@ mod tests;
 /// Preprocessing lexer
 ///
 /// Implements translation phase 3
-pub struct PpLexer<'src> {
-    source: SourceReader<'src>,
+pub struct PpLexer<'src, R: BufRead> {
+    source: SourceReader<'src, R>,
     /// Lookahead buffer for peeking ahead
     lookahead: VecDeque<Spanned<'src, char>>,
     /// Pending token to return next
     pending: Option<Spanned<'src, PreprocessingToken>>,
 }
 
-impl<'src> PpLexer<'src> {
+impl<'src, R: BufRead> PpLexer<'src, R> {
     /// Creates a new lexer from a source reader
     #[must_use]
-    pub const fn new(source: SourceReader<'src>) -> Self {
+    pub const fn new(source: SourceReader<'src, R>) -> Self {
         Self {
             source,
             lookahead: VecDeque::new(),
@@ -439,7 +440,7 @@ impl<'src> PpLexer<'src> {
     }
 }
 
-impl<'src> Iterator for PpLexer<'src> {
+impl<'src, R: BufRead> Iterator for PpLexer<'src, R> {
     type Item = Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>>;
 
     fn next(&mut self) -> Option<Self::Item> {

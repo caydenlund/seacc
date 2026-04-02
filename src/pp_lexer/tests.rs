@@ -3,15 +3,11 @@ use crate::source_reader::SourceReader;
 use crate::token::{
     CharacterConstant, CharacterConstantPrefix, Punctuator, StringLiteral, StringLiteralEncoding,
 };
-use std::io::Write;
-use tempfile::NamedTempFile;
+use std::io::Cursor;
 
 fn lex_str(input: &str) -> Result<Vec<PreprocessingToken>, String> {
-    let mut file = NamedTempFile::new().unwrap();
-    writeln!(file, "{input}").unwrap();
-    let path_owned = file.path().to_str().unwrap().to_string();
-
-    let reader = SourceReader::new(&path_owned).expect("Failed to create reader");
+    let source = format!("{input}\n");
+    let reader = SourceReader::new("<test>", Cursor::new(source.into_bytes()));
     let lexer = PpLexer::new(reader);
 
     let result: Result<Vec<_>, String> = lexer

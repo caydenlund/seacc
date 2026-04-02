@@ -1,30 +1,23 @@
 use seacc::source_reader::SourceReader;
-use std::{
-    fs::File,
-    io::{BufReader, Read, Write},
-};
-use tempfile::NamedTempFile;
+use std::io::Cursor;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut file = NamedTempFile::new()?;
-    writeln!(file, "??=include <stdio.h>")?;
-    writeln!(file, "int main() ??<")?;
-    writeln!(file, "    printf(\"Hello??/n\");")?;
-    writeln!(file, "    return 0;")?;
-    writeln!(file, "??>")?;
-    file.flush()?;
+    let source = concat!(
+        "??=include <stdio.h>\n",
+        "int main() ??<\n",
+        "    printf(\"Hello??/n\");\n",
+        "    return 0;\n",
+        "??>\n",
+    );
 
-    let path_owned = file.path().to_str().unwrap().to_string();
-    println!("Reading file: '{path_owned}'\n");
-
-    let mut s = String::new();
-    BufReader::new(File::open(&path_owned)?).read_to_string(&mut s)?;
-    for ch in s.chars() {
+    println!("Raw source:\n");
+    for ch in source.chars() {
         print!("{ch}");
     }
 
     println!("\n\nWith trigraph replacement:\n");
-    let reader = SourceReader::new(&path_owned).expect("Failed to create reader");
+    let cursor = Cursor::new(source.as_bytes().to_vec());
+    let reader = SourceReader::new("<demo>", cursor);
 
     for result in reader {
         let spanned = result.expect("Failed to read character");
