@@ -8,21 +8,22 @@ use std::str;
 mod error;
 pub use error::SourceError;
 
-/// A buffered source file reader that performs trigraph sequence replacement
+/// A buffered source reader that performs trigraph sequence replacement
 ///
 /// The reader yields one character at a time with an associated `Span`.
-pub struct SourceReader<'src> {
-    /// The file path reference
+/// It is generic over any type implementing `BufRead`.
+pub struct SourceReader<'src, R: BufRead> {
+    /// Name of the source (used in spans)
     file_path: &'src str,
-    /// Buffered reader for the underlying file
-    reader: BufReader<File>,
-    /// Current buffer of bytes from the file
+    /// Underlying buffered reader
+    reader: R,
+    /// Current buffer of bytes from the reader
     buffer: Vec<u8>,
     /// Current position in the buffer
     pos: usize,
-    /// Current byte offset in the original file
+    /// Current byte offset in the source
     byte_offset: u32,
-    /// Whether we've reached the end of the file
+    /// Whether we've reached the end of the input
     eof: bool,
     /// Raw character lookahead buffer (for trigraph/CRLF detection, max 3 chars)
     lookahead: VecDeque<Spanned<'src, char>>,
@@ -32,18 +33,13 @@ pub struct SourceReader<'src> {
     last_output_char: Option<char>,
 }
 
-impl<'src> SourceReader<'src> {
-    /// Creates a new `SourceReader` from a file path
+impl<'src, R: BufRead> SourceReader<'src, R> {
+    /// Creates a new `SourceReader` from any `BufRead` source.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be opened or read.
-    pub fn new(file_path: &'src str) -> Result<Self, SourceError<'src>> {
-        let file = File::open(Path::new(file_path))?;
-        let reader = BufReader::new(file);
-
-        Ok(Self {
-            file_path,
+    /// `name` is used as the source name in spans.
+    pub const fn new(name: &'src str, reader: R) -> Self {
+        Self {
+            file_path: name,
             reader,
             buffer: Vec::new(),
             pos: 0,
@@ -52,9 +48,23 @@ impl<'src> SourceReader<'src> {
             lookahead: VecDeque::new(),
             pending: None,
             last_output_char: None,
-        })
+        }
     }
+}
 
+impl<'src> SourceReader<'src, BufReader<File>> {
+    /// Creates a new `SourceReader` from a file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened.
+    pub fn from_path(file_path: &'src str) -> Result<Self, SourceError<'src>> {
+        let file = File::open(Path::new(file_path))?;
+        Ok(Self::new(file_path, BufReader::new(file)))
+    }
+}
+
+impl<'src, R: BufRead> SourceReader<'src, R> {
     /// Reads the next UTF-8 character from the buffer, refilling if necessary
     /// Checks `lookahead` first before reading from the file
     fn read_raw_char(&mut self) -> Result<Option<Spanned<'src, char>>, SourceError<'src>> {
@@ -222,7 +232,7 @@ impl<'src> SourceReader<'src> {
     }
 }
 
-impl<'src> Iterator for SourceReader<'src> {
+impl<'src, R: BufRead> Iterator for SourceReader<'src, R> {
     type Item = Result<Spanned<'src, char>, SourceError<'src>>;
 
     fn next(&mut self) -> Option<Self::Item> {

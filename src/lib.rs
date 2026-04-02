@@ -11,6 +11,7 @@
 )]
 
 pub mod pp_lexer;
+pub mod preprocessor;
 pub mod source_reader;
 pub mod span;
 pub mod token;
