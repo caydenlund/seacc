@@ -21,24 +21,6 @@ impl CharacterConstant {
     /// # Errors
     /// Returns an error if `raw_char_sequence` is not a valid character constant.
     pub fn new(raw_char_sequence: &str) -> Result<Self, CharacterConstantError> {
-        // character-constant :: ' c-char-sequence '
-        // character-constant :: L' c-char-sequence '
-        // character-constant :: u' c-char-sequence '
-        // character-constant :: U' c-char-sequence '
-        //
-        // c-char-sequence :: c-char
-        // c-char-sequence :: c-char-sequence c-char
-        //
-        // c-char :: <any character except `'`, `\`, or new-line>
-        // c-char :: escape-sequence
-        //
-        // escape-sequence :: `\'` or `\"` or `\?` or `\\` or `\a` or `\b` or `\f` or `\n` or `\r` or `\t` or `\v`
-        // escape-sequence :: \ octal-digit
-        // escape-sequence :: \ octal-digit octal-digit
-        // escape-sequence :: \ octal-digit octal-digit octal-digit
-        // escape-sequence :: \x hexadecimal-digit
-        // escape-sequence :: \x hexadecimal-digit hexadecimal-digit hexadecimal-digit
-
         let err = || CharacterConstantError(raw_char_sequence.into());
 
         let (prefix_type, content) = match raw_char_sequence.chars().next() {
@@ -129,11 +111,16 @@ impl CharacterConstant {
     ///
     /// # Errors
     /// Returns an error if `ch` is not valid for the given `prefix`.
-    pub const fn from_parts(
+    pub fn from_parts(
         ch: char,
         prefix: CharacterConstantPrefix,
     ) -> Result<Self, CharacterConstantError> {
-        // TODO: Ensure that the `ch` is valid for the given `prefix`
+        // u'...' uses `char16_t`, which can only hold BMP characters (U+0000–U+FFFF).
+        // L'...' uses `wchar_t` (platform-defined size; no further validation here).
+        // U'...' uses `char32_t`, which accepts any Unicode scalar — already guaranteed by `char`.
+        if matches!(prefix, CharacterConstantPrefix::Utf16) && u32::from(ch) > 0xFFFF {
+            return Err(CharacterConstantError(format!("u'{ch}'")));
+        }
         Ok(Self(ch, prefix))
     }
 
