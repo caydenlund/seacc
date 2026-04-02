@@ -4,7 +4,8 @@ pub use error::PpLexerError;
 use crate::source_reader::SourceReader;
 use crate::span::{Span, Spanned};
 use crate::token::{
-    Identifier, PreprocessingToken, Punctuator, StringLiteral, StringLiteralEncoding,
+    CharacterConstant, Identifier, PreprocessingToken, Punctuator, StringLiteral,
+    StringLiteralEncoding,
 };
 use std::collections::VecDeque;
 
@@ -225,6 +226,54 @@ impl<'src> PpLexer<'src> {
         }
     }
 
+    /// Lex a character constant
+    fn lex_character_constant(
+        &mut self,
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+        let first = self.read_char()?.unwrap();
+        let file = first.span.file;
+        let token_start = first.span.start;
+
+        // Collect raw text (including prefix and quotes) for `CharacterConstant::new`
+        let mut raw = String::new();
+        raw.push(first.value);
+
+        // Consume the opening quote if we read a prefix
+        if first.value != '\'' {
+            self.read_known_char('\'')?;
+            raw.push('\'');
+        }
+
+        // Read c-chars until closing "'", newline, or EOF
+        loop {
+            let Some(ch) = self.read_char()? else {
+                return Err(PpLexerError::UnterminatedCharacterConstant(first.span));
+            };
+            match ch.value {
+                '\'' => {
+                    raw.push('\'');
+                    let span = Span::new(file, token_start, ch.span.end);
+                    let char_const = CharacterConstant::new(&raw)
+                        .map_err(|e| PpLexerError::InvalidCharacterConstant(first.span, e))?;
+                    return Ok(Spanned::new(
+                        PreprocessingToken::CharacterConstant(char_const),
+                        span,
+                    ));
+                }
+                '\n' => return Err(PpLexerError::UnterminatedCharacterConstant(first.span)),
+                '\\' => {
+                    // Consume one char of the escape sequence to avoid treating "\'" as end
+                    raw.push('\\');
+                    let Some(escaped) = self.read_char()? else {
+                        return Err(PpLexerError::UnterminatedCharacterConstant(first.span));
+                    };
+                    raw.push(escaped.value);
+                }
+                c => raw.push(c),
+            }
+        }
+    }
+
     /// Read a pp-number
     fn read_pp_number(&mut self) -> Result<Spanned<'src, String>, PpLexerError<'src>> {
         let mut chars = String::new();
@@ -318,7 +367,12 @@ impl<'src> PpLexer<'src> {
             self.peek_n(2)?.map(|ch| ch.value),
         ];
 
-        let p = |punct| Ok(Spanned::new(PreprocessingToken::Punctuator(punct), first.span));
+        let p = |punct| {
+            Ok(Spanned::new(
+                PreprocessingToken::Punctuator(punct),
+                first.span,
+            ))
+        };
         match (first.value, vals[0], vals[1], vals[2]) {
             // 4-char digraph:
             ('%', Some(':'), Some('%'), Some(':')) => self.mk_punct(first, 3, Punctuator::HashHash),
@@ -377,7 +431,10 @@ impl<'src> PpLexer<'src> {
             ('=', _, _, _) => p(Punctuator::Assign),
             (',', _, _, _) => p(Punctuator::Comma),
             ('#', _, _, _) => p(Punctuator::Hash),
-            _ => Ok(Spanned::new(PreprocessingToken::OtherChar(first.value), first.span)),
+            _ => Ok(Spanned::new(
+                PreprocessingToken::OtherChar(first.value),
+                first.span,
+            )),
         }
     }
 }
@@ -420,16 +477,21 @@ impl<'src> Iterator for PpLexer<'src> {
             }
         }
 
-        // Check for string literal (before identifier)
+        // Check for string literal or character constant (before identifier).
+        // Character constants have no "u8" prefix.
+        let next1 = self.peek_n(1).ok().and_then(|o| o.map(|s| s.value));
+        let next2 = self.peek_n(2).ok().and_then(|o| o.map(|s| s.value));
         let is_string_start = ch.value == '"'
-            || (matches!(ch.value, 'L' | 'U')
-                && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '"'))
-            || (ch.value == 'u' && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '"'))
-            || (ch.value == 'u'
-                && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '8')
-                && matches!(self.peek_n(2), Ok(Some(next)) if next.value == '"'));
+            || (matches!(ch.value, 'L' | 'U') && next1 == Some('"'))
+            || (ch.value == 'u' && next1 == Some('"'))
+            || (ch.value == 'u' && next1 == Some('8') && next2 == Some('"'));
         if is_string_start {
             return Some(self.lex_string_literal());
+        }
+        let is_char_const_start =
+            ch.value == '\'' || (matches!(ch.value, 'L' | 'u' | 'U') && next1 == Some('\''));
+        if is_char_const_start {
+            return Some(self.lex_character_constant());
         }
 
         // Try identifier

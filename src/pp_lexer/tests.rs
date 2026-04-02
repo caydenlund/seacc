@@ -1,6 +1,8 @@
 use super::*;
 use crate::source_reader::SourceReader;
-use crate::token::{Punctuator, StringLiteral, StringLiteralEncoding};
+use crate::token::{
+    CharacterConstant, CharacterConstantPrefix, Punctuator, StringLiteral, StringLiteralEncoding,
+};
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -1297,5 +1299,162 @@ fn test_string_literal_in_expression() {
             assert_eq!(c, "hello");
         }
         t => panic!("Expected string literal, got {t:?}"),
+    }
+}
+
+// ============================================================================
+// CHARACTER CONSTANT TESTS
+// ============================================================================
+
+fn assert_char_const(input: &str, expected: CharacterConstant) {
+    let tokens = lex_str(input).unwrap();
+    match &tokens[0] {
+        PreprocessingToken::CharacterConstant(cc) => {
+            assert_eq!(*cc, expected, "for input {input:?}");
+        }
+        t => panic!("Expected CharacterConstant, got {t:?} for input {input:?}"),
+    }
+}
+
+#[test]
+fn test_char_const_plain() {
+    assert_char_const(
+        "'x'",
+        CharacterConstant::from_parts('x', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_wide() {
+    assert_char_const(
+        "L'x'",
+        CharacterConstant::from_parts('x', CharacterConstantPrefix::Wide).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_utf16() {
+    assert_char_const(
+        "u'x'",
+        CharacterConstant::from_parts('x', CharacterConstantPrefix::Utf16).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_utf32() {
+    assert_char_const(
+        "U'x'",
+        CharacterConstant::from_parts('x', CharacterConstantPrefix::Utf32).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_escape_newline() {
+    assert_char_const(
+        r"'\n'",
+        CharacterConstant::from_parts('\n', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_escape_tab() {
+    assert_char_const(
+        r"'\t'",
+        CharacterConstant::from_parts('\t', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_escape_quote() {
+    assert_char_const(
+        r"'\''",
+        CharacterConstant::from_parts('\'', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_escape_backslash() {
+    assert_char_const(
+        r"'\\'",
+        CharacterConstant::from_parts('\\', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_hex_escape() {
+    assert_char_const(
+        r"'\x41'",
+        CharacterConstant::from_parts('A', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_octal_escape() {
+    assert_char_const(
+        r"'\101'",
+        CharacterConstant::from_parts('A', CharacterConstantPrefix::None).unwrap(),
+    );
+}
+
+#[test]
+fn test_char_const_is_not_identifier() {
+    // "L"/"u"/"U" followed by "'" should be a char const, not an identifier
+    let tokens = lex_str("L'x'").unwrap();
+    assert_eq!(tokens.len(), 2); // "L'x'", newline
+    match &tokens[0] {
+        PreprocessingToken::CharacterConstant(_) => {}
+        t => panic!("Expected CharacterConstant, got {t:?}"),
+    }
+}
+
+#[test]
+fn test_char_const_u_identifier_not_char_const() {
+    // "u" not followed by "'" should be an identifier
+    let tokens = lex_str("u foo").unwrap();
+    match &tokens[0] {
+        PreprocessingToken::Identifier(id) => assert_eq!(id.as_ref(), "u"),
+        t => panic!("Expected identifier 'u', got {t:?}"),
+    }
+}
+
+#[test]
+fn test_char_const_unterminated_eof() {
+    let result = lex_str("'x");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("unterminated character constant")
+    );
+}
+
+#[test]
+fn test_char_const_unterminated_newline() {
+    let result = lex_str("'x\n'");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("unterminated character constant")
+    );
+}
+
+#[test]
+fn test_char_const_invalid() {
+    let result = lex_str("''"); // empty char constant
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("invalid character constant"));
+}
+
+#[test]
+fn test_char_const_in_expression() {
+    let tokens = lex_str("c == 'x'").unwrap();
+    // "c", space, "==", space, "'x'", newline
+    assert_eq!(tokens.len(), 6);
+    match &tokens[4] {
+        PreprocessingToken::CharacterConstant(cc) => {
+            assert_eq!(cc.into_char(), 'x');
+        }
+        t => panic!("Expected CharacterConstant, got {t:?}"),
     }
 }

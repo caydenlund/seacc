@@ -1,5 +1,6 @@
 use crate::source_reader::SourceError;
 use crate::span::Span;
+use crate::token::CharacterConstantError;
 use std::fmt;
 
 /// Error type for preprocessing lexer operations
@@ -11,6 +12,10 @@ pub enum PpLexerError<'src> {
     UnterminatedBlockComment(Span<'src>),
     /// Unterminated string literal at EOF or newline
     UnterminatedStringLiteral(Span<'src>),
+    /// Unterminated character constant at EOF or newline
+    UnterminatedCharacterConstant(Span<'src>),
+    /// Invalid character constant content
+    InvalidCharacterConstant(Span<'src>, CharacterConstantError),
 }
 
 impl fmt::Display for PpLexerError<'_> {
@@ -28,6 +33,20 @@ impl fmt::Display for PpLexerError<'_> {
                 write!(
                     f,
                     "unterminated string literal starting at {}:{}-{}",
+                    span.file, span.start.0, span.end.0
+                )
+            }
+            PpLexerError::UnterminatedCharacterConstant(span) => {
+                write!(
+                    f,
+                    "unterminated character constant starting at {}:{}-{}",
+                    span.file, span.start.0, span.end.0
+                )
+            }
+            PpLexerError::InvalidCharacterConstant(span, err) => {
+                write!(
+                    f,
+                    "invalid character constant at {}:{}-{}: {err}",
                     span.file, span.start.0, span.end.0
                 )
             }
