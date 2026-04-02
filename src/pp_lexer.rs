@@ -3,7 +3,9 @@ pub use error::PpLexerError;
 
 use crate::source_reader::SourceReader;
 use crate::span::{Span, Spanned};
-use crate::token::{Identifier, PreprocessingToken, Punctuator};
+use crate::token::{
+    Identifier, PreprocessingToken, Punctuator, StringLiteral, StringLiteralEncoding,
+};
 use std::collections::VecDeque;
 
 #[cfg(test)]
@@ -159,6 +161,66 @@ impl<'src> PpLexer<'src> {
                 let end_span = self.read_known_char('/')?.unwrap();
                 let span = Span::new(start_span.file, start_span.start, end_span.end);
                 return Ok(Spanned::new(PreprocessingToken::Whitespace, span));
+            }
+        }
+    }
+
+    /// Lex a string literal
+    fn lex_string_literal(
+        &mut self,
+    ) -> Result<Spanned<'src, PreprocessingToken>, PpLexerError<'src>> {
+        let first = self.read_char()?.unwrap();
+        let file = first.span.file;
+        let token_start = first.span.start;
+
+        // Consume the encoding prefix and opening quote
+        let encoding = match first.value {
+            '"' => StringLiteralEncoding::None,
+            'L' => {
+                self.read_known_char('"')?;
+                StringLiteralEncoding::Wide
+            }
+            'u' => {
+                if matches!(self.peek_char()?, Some(ch) if ch.value == '8') {
+                    self.read_char()?; // consume '8'
+                    self.read_known_char('"')?;
+                    StringLiteralEncoding::None
+                } else {
+                    self.read_known_char('"')?;
+                    StringLiteralEncoding::Utf16
+                }
+            }
+            'U' => {
+                self.read_known_char('"')?;
+                StringLiteralEncoding::Utf32
+            }
+            _ => unreachable!(),
+        };
+
+        // Read s-chars until closing `"`, newline, or EOF
+        let mut content = String::new();
+        loop {
+            let Some(ch) = self.read_char()? else {
+                return Err(PpLexerError::UnterminatedStringLiteral(first.span));
+            };
+            match ch.value {
+                '"' => {
+                    let span = Span::new(file, token_start, ch.span.end);
+                    return Ok(Spanned::new(
+                        PreprocessingToken::StringLiteral(StringLiteral(encoding, content)),
+                        span,
+                    ));
+                }
+                '\n' => return Err(PpLexerError::UnterminatedStringLiteral(first.span)),
+                '\\' => {
+                    // Consume one char of the escape sequence to avoid treating \" as end
+                    content.push('\\');
+                    let Some(escaped) = self.read_char()? else {
+                        return Err(PpLexerError::UnterminatedStringLiteral(first.span));
+                    };
+                    content.push(escaped.value);
+                }
+                c => content.push(c),
             }
         }
     }
@@ -353,6 +415,18 @@ impl<'src> Iterator for PpLexer<'src> {
             if next.value == '*' {
                 return Some(self.lex_block_comment());
             }
+        }
+
+        // Check for string literal (before identifier)
+        let is_string_start = ch.value == '"'
+            || (matches!(ch.value, 'L' | 'U')
+                && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '"'))
+            || (ch.value == 'u' && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '"'))
+            || (ch.value == 'u'
+                && matches!(self.peek_n(1), Ok(Some(next)) if next.value == '8')
+                && matches!(self.peek_n(2), Ok(Some(next)) if next.value == '"'));
+        if is_string_start {
+            return Some(self.lex_string_literal());
         }
 
         // Try identifier

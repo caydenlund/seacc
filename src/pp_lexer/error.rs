@@ -11,6 +11,8 @@ pub enum PpLexerError<'src> {
     UnexpectedChar(Spanned<'src, char>),
     /// Unterminated block comment at EOF
     UnterminatedBlockComment(Span<'src>),
+    /// Unterminated string literal at EOF or newline
+    UnterminatedStringLiteral(Span<'src>),
 }
 
 impl fmt::Display for PpLexerError<'_> {
@@ -28,6 +30,13 @@ impl fmt::Display for PpLexerError<'_> {
                 write!(
                     f,
                     "unterminated block comment starting at {}:{}-{}",
+                    span.file, span.start.0, span.end.0
+                )
+            }
+            PpLexerError::UnterminatedStringLiteral(span) => {
+                write!(
+                    f,
+                    "unterminated string literal starting at {}:{}-{}",
                     span.file, span.start.0, span.end.0
                 )
             }

@@ -1,6 +1,6 @@
 use super::*;
 use crate::source_reader::SourceReader;
-use crate::token::Punctuator;
+use crate::token::{Punctuator, StringLiteral, StringLiteralEncoding};
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -538,10 +538,8 @@ fn test_other_char_after_slash() {
     let tokens = lex_str("/@").unwrap();
     assert_eq!(tokens.len(), 3); // "/", "@", newline
     match (&tokens[0], &tokens[1]) {
-        (
-            PreprocessingToken::Punctuator(Punctuator::Slash),
-            PreprocessingToken::OtherChar('@'),
-        ) => {}
+        (PreprocessingToken::Punctuator(Punctuator::Slash), PreprocessingToken::OtherChar('@')) => {
+        }
         _ => panic!("Expected Slash then OtherChar('@'), got {tokens:?}"),
     }
 }
@@ -1173,5 +1171,131 @@ fn test_pp_number_stops_at_non_number_char() {
             assert_eq!(n, "42");
         }
         _ => panic!("Expected PpNumber then Plus, got {tokens:?}"),
+    }
+}
+
+// ============================================================================
+// STRING LITERAL TESTS
+// ============================================================================
+
+fn assert_string_literal(
+    input: &str,
+    expected_encoding: StringLiteralEncoding,
+    expected_content: &str,
+) {
+    let tokens = lex_str(input).unwrap();
+    match &tokens[0] {
+        PreprocessingToken::StringLiteral(StringLiteral(enc, content)) => {
+            assert_eq!(
+                *enc, expected_encoding,
+                "encoding mismatch for input {input:?}"
+            );
+            assert_eq!(
+                content, expected_content,
+                "content mismatch for input {input:?}"
+            );
+        }
+        t => panic!("Expected StringLiteral, got {t:?} for input {input:?}"),
+    }
+}
+
+#[test]
+fn test_string_literal_plain() {
+    assert_string_literal(r#""hello""#, StringLiteralEncoding::None, "hello");
+}
+
+#[test]
+fn test_string_literal_empty() {
+    assert_string_literal(r#""""#, StringLiteralEncoding::None, "");
+}
+
+#[test]
+fn test_string_literal_wide() {
+    assert_string_literal(r#"L"wide""#, StringLiteralEncoding::Wide, "wide");
+}
+
+#[test]
+fn test_string_literal_utf16() {
+    assert_string_literal(r#"u"utf16""#, StringLiteralEncoding::Utf16, "utf16");
+}
+
+#[test]
+fn test_string_literal_utf32() {
+    assert_string_literal(r#"U"utf32""#, StringLiteralEncoding::Utf32, "utf32");
+}
+
+#[test]
+fn test_string_literal_utf8() {
+    assert_string_literal(r#"u8"utf8""#, StringLiteralEncoding::None, "utf8");
+}
+
+#[test]
+fn test_string_literal_escape_quote() {
+    assert_string_literal(
+        r#""say \"hi\"""#,
+        StringLiteralEncoding::None,
+        r#"say \"hi\""#,
+    );
+}
+
+#[test]
+fn test_string_literal_escape_backslash() {
+    assert_string_literal(r#""a\\b""#, StringLiteralEncoding::None, r"a\\b");
+}
+
+#[test]
+fn test_string_literal_escape_sequences() {
+    assert_string_literal(r#""\n\t\r""#, StringLiteralEncoding::None, r"\n\t\r");
+}
+
+#[test]
+fn test_string_literal_is_not_identifier() {
+    // "L", "u", "U" followed by '"' should be a string, not identifier + something
+    let tokens = lex_str(r#"L"x""#).unwrap();
+    assert_eq!(tokens.len(), 2); // 'L"x"', newline
+    match &tokens[0] {
+        PreprocessingToken::StringLiteral(StringLiteral(StringLiteralEncoding::Wide, c)) => {
+            assert_eq!(c, "x");
+        }
+        t => panic!("Expected wide string literal, got {t:?}"),
+    }
+}
+
+#[test]
+fn test_string_literal_u_identifier_not_string() {
+    // "u" not followed by '"' or '8"' should be an identifier
+    let tokens = lex_str("u foo").unwrap();
+    assert_eq!(tokens.len(), 4); // "u", space, "foo", newline
+    match &tokens[0] {
+        PreprocessingToken::Identifier(id) => assert_eq!(id.as_ref(), "u"),
+        t => panic!("Expected identifier 'u', got {t:?}"),
+    }
+}
+
+#[test]
+fn test_string_literal_unterminated_eof() {
+    let result = lex_str(r#""no end"#);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("unterminated string literal"));
+}
+
+#[test]
+fn test_string_literal_unterminated_newline() {
+    // String literal can't span a newline
+    let result = lex_str("\"line1\nline2\"");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("unterminated string literal"));
+}
+
+#[test]
+fn test_string_literal_in_expression() {
+    let tokens = lex_str(r#"x = "hello";"#).unwrap();
+    // "x", space, "=", space, '"hello"', ";", newline
+    assert_eq!(tokens.len(), 7);
+    match &tokens[4] {
+        PreprocessingToken::StringLiteral(StringLiteral(StringLiteralEncoding::None, c)) => {
+            assert_eq!(c, "hello");
+        }
+        t => panic!("Expected string literal, got {t:?}"),
     }
 }
