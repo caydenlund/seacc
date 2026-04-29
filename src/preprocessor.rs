@@ -22,6 +22,23 @@ enum Macro {
     FunctionLike(),
 }
 
+#[derive(Clone, Debug)]
+struct Conditional {
+    currently_outputting: bool,
+    found_output: bool,
+    found_else: bool,
+}
+
+impl Conditional {
+    pub const fn new(currently_outputting: bool) -> Self {
+        Self {
+            currently_outputting,
+            found_output: currently_outputting,
+            found_else: false,
+        }
+    }
+}
+
 /// The main preprocessor (translation phase 4)
 ///
 /// Processes preprocessing directives, expands macros, handles includes,
@@ -32,6 +49,7 @@ pub struct Preprocessor<'src, R: BufRead> {
     include_stack: Vec<String>,
     output: VecDeque<Spanned<'src, PreprocessingToken>>,
     macros: HashMap<String, Macro>,
+    conditional_stack: Vec<Conditional>,
 }
 
 type Directive<'src> = (Identifier, Vec<Spanned<'src, PreprocessingToken>>);
@@ -44,6 +62,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
             include_stack: Vec::new(),
             output: VecDeque::new(),
             macros: HashMap::new(),
+            conditional_stack: Vec::new(),
         }
     }
 
@@ -132,6 +151,28 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
 
         if let Some((ident, rest)) = Self::match_directive(&to_process) {
             match ident.to_string().as_ref() {
+                "ifdef" => {
+                    let mut rest = rest
+                        .into_iter()
+                        .skip_while(|t| t.value == PreprocessingToken::Whitespace);
+
+                    let Some(PreprocessingToken::Identifier(ident)) = rest.next().map(|t| t.value)
+                    else {
+                        panic!("invalid #ifdef at {:?}", to_process.front().unwrap().span);
+                    };
+
+                    match rest.next().map(|t| t.value) {
+                        Some(PreprocessingToken::Newline) | None => {
+                            self.conditional_stack.push(Conditional::new(
+                                self.macros.contains_key(&ident.into_string()),
+                            ));
+                        }
+
+                        _ => {
+                            panic!("invalid #ifdef at {:?}", to_process.front().unwrap().span)
+                        }
+                    }
+                }
                 "define" => {
                     let mut rest = rest
                         .into_iter()
@@ -160,11 +201,57 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                                 to_process.front().unwrap().span
                             );
                         }
-                        _ => unreachable!(
-                            "invalid #define at {:?}",
-                            to_process.front().unwrap().span
-                        ),
+                        _ => panic!("invalid #define at {:?}", to_process.front().unwrap().span),
                     }
+                }
+                "ifndef" => {
+                    let mut rest = rest
+                        .into_iter()
+                        .skip_while(|t| t.value == PreprocessingToken::Whitespace);
+
+                    let Some(PreprocessingToken::Identifier(ident)) = rest.next().map(|t| t.value)
+                    else {
+                        panic!("invalid #ifndef at {:?}", to_process.front().unwrap().span);
+                    };
+
+                    match rest.next().map(|t| t.value) {
+                        Some(PreprocessingToken::Newline) | None => {
+                            self.conditional_stack.push(Conditional::new(
+                                !self.macros.contains_key(&ident.into_string()),
+                            ));
+                        }
+
+                        _ => {
+                            panic!("invalid #ifndef at {:?}", to_process.front().unwrap().span)
+                        }
+                    }
+                }
+                "else" => {
+                    let cond = self.conditional_stack.last_mut().unwrap_or_else(|| {
+                        panic!(
+                            "#else without #if at {:?}",
+                            to_process.front().unwrap().span
+                        )
+                    });
+
+                    assert!(
+                        !cond.found_else,
+                        "duplicate #else at {:?}",
+                        to_process.front().unwrap().span
+                    );
+
+                    cond.found_else = true;
+                    cond.currently_outputting = !cond.found_output;
+                    if cond.currently_outputting {
+                        cond.found_output = true;
+                    }
+                }
+                "endif" => {
+                    assert!(
+                        self.conditional_stack.pop().is_some(),
+                        "#endif without #if at {:?}",
+                        to_process.front().unwrap().span
+                    );
                 }
                 "undef" => todo!(),
 
