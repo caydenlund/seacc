@@ -268,7 +268,24 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                     );
                     self.currently_outputting = is_output_enabled(&self.conditional_stack);
                 }
-                ("undef", true) => todo!(),
+                ("undef", true) => {
+                    let mut rest = rest
+                        .into_iter()
+                        .skip_while(|t| t.value == PreprocessingToken::Whitespace);
+
+                    let Some(PreprocessingToken::Identifier(ident)) = rest.next().map(|t| t.value)
+                    else {
+                        panic!("invalid #undef at {:?}", to_process.front().unwrap().span);
+                    };
+
+                    match rest.next().map(|t| t.value) {
+                        Some(PreprocessingToken::Newline) | None => {
+                            self.macros.remove(ident.as_ref());
+                        }
+
+                        _ => panic!("invalid #undef at {:?}", to_process.front().unwrap().span),
+                    }
+                }
                 (_, false) => {}
                 _ => panic!("invalid directive {ident}"),
             }

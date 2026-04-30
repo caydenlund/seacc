@@ -54,6 +54,30 @@ fn inactive_branches_do_not_define_macros() {
 }
 
 #[test]
+fn undef_removes_macro() {
+    let tokens = preprocess(
+        "#define FOO bar\n\
+             #undef FOO\n\
+             FOO\n",
+    );
+
+    assert_eq!(identifiers(&tokens), vec!["FOO"]);
+}
+
+#[test]
+fn inactive_branches_do_not_undef_macros() {
+    let tokens = preprocess(
+        "#define FOO bar\n\
+             #ifdef MISSING\n\
+             #undef FOO\n\
+             #endif\n\
+             FOO\n",
+    );
+
+    assert_eq!(identifiers(&tokens), vec!["bar"]);
+}
+
+#[test]
 fn nested_conditionals_obey_inactive_parents() {
     let tokens = preprocess(
         "#ifdef OUTER\n\
