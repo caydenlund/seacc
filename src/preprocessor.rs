@@ -5,6 +5,9 @@ use crate::pp_lexer::{PpLexer, PpLexerError};
 use crate::span::Spanned;
 use crate::token::{Identifier, PreprocessingToken, Punctuator};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug)]
 pub enum PreprocessorError<'src> {
     PpLexerError(PpLexerError<'src>),
@@ -50,6 +53,7 @@ pub struct Preprocessor<'src, R: BufRead> {
     output: VecDeque<Spanned<'src, PreprocessingToken>>,
     macros: HashMap<String, Macro>,
     conditional_stack: Vec<Conditional>,
+    currently_outputting: bool,
 }
 
 type Directive<'src> = (Identifier, Vec<Spanned<'src, PreprocessingToken>>);
@@ -63,6 +67,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
             output: VecDeque::new(),
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
+            currently_outputting: true,
         }
     }
 
@@ -132,6 +137,12 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
     }
 
     fn process_line(&mut self) -> Option<Result<(), PreprocessorError<'src>>> {
+        let is_output_enabled = |conditional_stack: &[Conditional]| {
+            conditional_stack
+                .iter()
+                .all(|cond| cond.currently_outputting)
+        };
+
         let mut to_process = VecDeque::new();
         for tok in self.pp_lexer.by_ref() {
             match tok {
@@ -150,8 +161,8 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
         }
 
         if let Some((ident, rest)) = Self::match_directive(&to_process) {
-            match ident.to_string().as_ref() {
-                "ifdef" => {
+            match (ident.to_string().as_ref(), self.currently_outputting) {
+                ("ifdef", _) => {
                     let mut rest = rest
                         .into_iter()
                         .skip_while(|t| t.value == PreprocessingToken::Whitespace);
@@ -166,6 +177,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                             self.conditional_stack.push(Conditional::new(
                                 self.macros.contains_key(&ident.into_string()),
                             ));
+                            self.currently_outputting = is_output_enabled(&self.conditional_stack);
                         }
 
                         _ => {
@@ -173,7 +185,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                         }
                     }
                 }
-                "define" => {
+                ("define", true) => {
                     let mut rest = rest
                         .into_iter()
                         .skip_while(|t| t.value == PreprocessingToken::Whitespace);
@@ -204,7 +216,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                         _ => panic!("invalid #define at {:?}", to_process.front().unwrap().span),
                     }
                 }
-                "ifndef" => {
+                ("ifndef", _) => {
                     let mut rest = rest
                         .into_iter()
                         .skip_while(|t| t.value == PreprocessingToken::Whitespace);
@@ -219,6 +231,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                             self.conditional_stack.push(Conditional::new(
                                 !self.macros.contains_key(&ident.into_string()),
                             ));
+                            self.currently_outputting = is_output_enabled(&self.conditional_stack);
                         }
 
                         _ => {
@@ -226,7 +239,7 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                         }
                     }
                 }
-                "else" => {
+                ("else", _) => {
                     let cond = self.conditional_stack.last_mut().unwrap_or_else(|| {
                         panic!(
                             "#else without #if at {:?}",
@@ -245,23 +258,27 @@ impl<'src, R: BufRead> Preprocessor<'src, R> {
                     if cond.currently_outputting {
                         cond.found_output = true;
                     }
+                    self.currently_outputting = is_output_enabled(&self.conditional_stack);
                 }
-                "endif" => {
+                ("endif", _) => {
                     assert!(
                         self.conditional_stack.pop().is_some(),
                         "#endif without #if at {:?}",
                         to_process.front().unwrap().span
                     );
+                    self.currently_outputting = is_output_enabled(&self.conditional_stack);
                 }
-                "undef" => todo!(),
-
+                ("undef", true) => todo!(),
+                (_, false) => {}
                 _ => panic!("invalid directive {ident}"),
             }
 
             return Some(Ok(()));
         }
 
-        self.process_tokens(to_process);
+        if self.currently_outputting {
+            self.process_tokens(to_process);
+        }
 
         Some(Ok(()))
     }
