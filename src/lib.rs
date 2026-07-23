@@ -10,4 +10,4 @@
 pub mod lex;
 
 mod span;
-pub use span::{FileId, LineMap, Span};
+pub use span::{FileId, LineMap, Span, Spanned};

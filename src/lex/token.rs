@@ -1,4 +1,4 @@
-use crate::Span;
+use crate::span::Spanned;
 
 mod punct;
 pub use punct::Punct;
@@ -17,8 +17,4 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-}
+pub type Token = Spanned<TokenKind>;

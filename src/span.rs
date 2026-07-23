@@ -9,6 +9,13 @@ pub struct Span {
     pub end: usize,
 }
 
+// item that has a span
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spanned<T> {
+    pub value: T,
+    pub span: Span,
+}
+
 // maps byte indices to lines/columns in the source file.
 // each element is the start of a line.
 // the last element corresponds to the end of the file.
