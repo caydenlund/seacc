@@ -5,6 +5,8 @@ use std::{error::Error, fmt::Display};
 pub enum LexErrorKind {
     UnexpectedChar(char),
     UnterminatedString,
+    InvalidStringEscape(char),
+    MissingFinalNewline,
 }
 
 impl Display for LexErrorKind {
@@ -12,6 +14,8 @@ impl Display for LexErrorKind {
         match self {
             Self::UnexpectedChar(c) => write!(f, "unexpected character: '{c}'"),
             Self::UnterminatedString => write!(f, "unterminated string literal"),
+            Self::InvalidStringEscape(c) => write!(f, "invalid string escape: '\\{c}'"),
+            Self::MissingFinalNewline => write!(f, "file does not end with a newline"),
         }
     }
 }
