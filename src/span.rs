@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 // unique identifier of an open file
 pub type FileId = usize;
 
@@ -7,6 +9,18 @@ pub struct Span {
     pub file: FileId,
     pub start: usize,
     pub end: usize,
+}
+
+impl Add for Span {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            file: self.file,
+            start: self.start.min(rhs.start),
+            end: self.end.max(rhs.end),
+        }
+    }
 }
 
 // item that has a span

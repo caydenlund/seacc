@@ -8,6 +8,7 @@
 )]
 
 pub mod lex;
+pub mod parse;
 
 mod span;
 pub use span::{FileId, LineMap, Span, Spanned};

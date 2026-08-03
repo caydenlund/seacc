@@ -1,10 +1,10 @@
 use crate::{FileId, LineMap};
 use token::Token;
 
+pub mod token;
+
 mod error;
 pub use error::{LexError, LexErrorKind};
-
-pub mod token;
 
 mod lexer;
 
