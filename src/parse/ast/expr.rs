@@ -58,5 +58,9 @@ pub enum Expr {
         callee: ExprId,
         args: Vec<ExprId>,
     },
+    GetIndex {
+        obj: ExprId,
+        ind: ExprId,
+    },
     Error,
 }

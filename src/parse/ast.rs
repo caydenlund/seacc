@@ -16,7 +16,7 @@ pub use stmt::*;
 pub struct DeclId(u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExprId(u32);
+pub struct ExprId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ItemId(u32);
@@ -28,14 +28,36 @@ pub struct StmtId(u32);
 pub enum Type {
     Int,
     Float,
-    Array(Box<Type>, usize),
+    Array(Box<Self>, usize),
     Struct {},
 }
 
 #[derive(Default, Clone)]
 pub struct Ast {
-    decls: Vec<Spanned<Decl>>,
-    exprs: Vec<Spanned<Expr>>,
-    items: Vec<Spanned<Item>>,
-    stmts: Vec<Spanned<Stmt>>,
+    pub decls: Vec<Spanned<Decl>>,
+    pub exprs: Vec<Spanned<Expr>>,
+    pub items: Vec<Spanned<Item>>,
+    pub stmts: Vec<Spanned<Stmt>>,
+}
+
+impl Ast {
+    #[must_use]
+    pub fn decl(&self, id: DeclId) -> &Spanned<Decl> {
+        &self.decls[id.0 as usize]
+    }
+
+    #[must_use]
+    pub fn expr(&self, id: ExprId) -> &Spanned<Expr> {
+        &self.exprs[id.0 as usize]
+    }
+
+    #[must_use]
+    pub fn item(&self, id: ItemId) -> &Spanned<Item> {
+        &self.items[id.0 as usize]
+    }
+
+    #[must_use]
+    pub fn stmt(&self, id: StmtId) -> &Spanned<Stmt> {
+        &self.stmts[id.0 as usize]
+    }
 }

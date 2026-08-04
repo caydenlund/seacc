@@ -1,5 +1,4 @@
-use crate::{Spanned, lex::token::Token};
-use ast::Expr;
+use crate::lex::token::Token;
 
 pub mod ast;
 
@@ -7,8 +6,8 @@ mod error;
 pub use error::{ParseError, ParseErrorKind};
 
 mod parser;
+pub use parser::ParsedOutput;
 
-pub fn parse(tokens: &[Token]) -> Result<Vec<Spanned<Expr>>, Vec<ParseError>> {
-    let parser = parser::Parser::new(tokens);
-    parser.parse()
+pub fn parse(tokens: &[Token]) -> ParsedOutput {
+    parser::Parser::new(tokens).parse()
 }
