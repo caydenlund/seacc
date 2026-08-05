@@ -4,5 +4,4 @@ use super::{DeclId, FunctionDecl, StmtId};
 pub enum Item {
     Decl(DeclId),
     FuncDef { decl: FunctionDecl, body: StmtId },
-    Error,
 }

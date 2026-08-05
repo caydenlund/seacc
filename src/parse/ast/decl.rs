@@ -24,7 +24,6 @@ pub enum Decl {
         name: Option<String>,
         variants: Option<Vec<EnumVariant>>,
     },
-    Error,
 }
 
 #[derive(Debug, Clone, PartialEq)]

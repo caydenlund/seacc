@@ -17,5 +17,4 @@ pub enum Stmt {
     Return(Option<ExprId>),
     Break,
     Continue,
-    Error,
 }

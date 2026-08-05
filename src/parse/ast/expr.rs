@@ -62,5 +62,4 @@ pub enum Expr {
         obj: ExprId,
         ind: ExprId,
     },
-    Error,
 }

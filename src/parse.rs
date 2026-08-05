@@ -2,9 +2,6 @@ use crate::lex::token::Token;
 
 pub mod ast;
 
-mod error;
-pub use error::{ParseError, ParseErrorKind};
-
 mod parser;
 pub use parser::ParsedOutput;
 
