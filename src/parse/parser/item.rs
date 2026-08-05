@@ -1,9 +1,39 @@
 use super::Parser;
+use crate::lex::token::{Punct, TokenKind};
 use crate::parse::ast::{Item, ItemId};
 use crate::{Span, Spanned};
 
 impl Parser<'_> {
     pub(super) fn parse_item(&mut self) -> ItemId {
+        if let Some(decl) = self.try_parse_function_decl() {
+            if self.peek().map(|token| &token.value) == Some(&TokenKind::Punct(Punct::Lcurly)) {
+                let body = self.parse_stmt();
+                let span = decl.span + self.ast.stmt(body).span;
+                return self.push_item(
+                    Item::FuncDef {
+                        decl: decl.value,
+                        body,
+                    },
+                    span,
+                );
+            }
+
+            let Some(semicolon) = self.next() else {
+                panic!("expected Semicolon after function declaration");
+            };
+            assert!(
+                matches!(
+                    semicolon.value,
+                    crate::lex::token::TokenKind::Punct(crate::lex::token::Punct::Semicolon)
+                ),
+                "expected Semicolon after function declaration, found {:?}",
+                semicolon.value
+            );
+            let span = decl.span + semicolon.span;
+            let decl = self.push_decl_for_item(decl.value, span);
+            return self.push_item(Item::Decl(decl), span);
+        }
+
         if let Some(decl) = self.try_parse_decl() {
             return self.push_item(Item::Decl(decl), self.ast.decl(decl).span);
         }
@@ -15,6 +45,19 @@ impl Parser<'_> {
         self.ast.items.push(Spanned { value: item, span });
         #[allow(clippy::cast_possible_truncation)]
         ItemId((self.ast.items.len() - 1) as u32)
+    }
+
+    fn push_decl_for_item(
+        &mut self,
+        decl: crate::parse::ast::FunctionDecl,
+        span: Span,
+    ) -> crate::parse::ast::DeclId {
+        self.ast.decls.push(Spanned {
+            value: crate::parse::ast::Decl::Function(decl),
+            span,
+        });
+        #[allow(clippy::cast_possible_truncation)]
+        crate::parse::ast::DeclId((self.ast.decls.len() - 1) as u32)
     }
 }
 
@@ -141,33 +184,44 @@ mod tests {
             }
         );
         // `b = a + argc;`
-        assert_eq!(parser.ast.stmts[2].value, Stmt::Expr(ExprId(3)));
+        assert_eq!(parser.ast.stmts[2].value, Stmt::Expr(ExprId(5)));
+        // `b`
+        assert_eq!(parser.ast.exprs[1].value, Expr::Ident("b".into()));
         // `a`
-        assert_eq!(parser.ast.exprs[1].value, Expr::Ident("a".into()));
+        assert_eq!(parser.ast.exprs[2].value, Expr::Ident("a".into()));
         // `argc`
-        assert_eq!(parser.ast.exprs[2].value, Expr::Ident("argc".into()));
+        assert_eq!(parser.ast.exprs[3].value, Expr::Ident("argc".into()));
         // `a + argc`
         assert_eq!(
-            parser.ast.exprs[3].value,
+            parser.ast.exprs[4].value,
+            Expr::Binary {
+                lhs: ExprId(2),
+                op: BinaryOp::Add,
+                rhs: ExprId(3)
+            }
+        );
+        // `b = a + argc`
+        assert_eq!(
+            parser.ast.exprs[5].value,
             Expr::Binary {
                 lhs: ExprId(1),
-                op: BinaryOp::Add,
-                rhs: ExprId(2)
+                op: BinaryOp::Assign,
+                rhs: ExprId(4)
             }
         );
         // `return a * b;`
-        assert_eq!(parser.ast.stmts[3].value, Stmt::Return(Some(ExprId(6))));
+        assert_eq!(parser.ast.stmts[3].value, Stmt::Return(Some(ExprId(8))));
         // `a`
-        assert_eq!(parser.ast.exprs[4].value, Expr::Ident("a".into()));
+        assert_eq!(parser.ast.exprs[6].value, Expr::Ident("a".into()));
         // `b`
-        assert_eq!(parser.ast.exprs[5].value, Expr::Ident("b".into()));
+        assert_eq!(parser.ast.exprs[7].value, Expr::Ident("b".into()));
         // `a * b`
         assert_eq!(
-            parser.ast.exprs[6].value,
+            parser.ast.exprs[8].value,
             Expr::Binary {
-                lhs: ExprId(4),
+                lhs: ExprId(6),
                 op: BinaryOp::Mul,
-                rhs: ExprId(5)
+                rhs: ExprId(7)
             }
         );
         // `{ /* ... */ }`

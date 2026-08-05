@@ -51,11 +51,98 @@ impl Parser<'_> {
                     let end = *end;
                     return Some(self.push_decl(Decl::Variable { typ, name, init }, start + end));
                 }
+                Some(TokenKind::Punct(Punct::Lparen)) => {
+                    self.pos = self
+                        .pos
+                        .checked_sub(2)
+                        .expect("declaration position underflow");
+                    let Spanned {
+                        value: decl,
+                        span: function_span,
+                    } = self
+                        .try_parse_function_decl()
+                        .expect("function declaration disappeared");
+                    let Some(Spanned {
+                        value: TokenKind::Punct(Punct::Semicolon),
+                        span: end,
+                    }) = self.next()
+                    else {
+                        panic!("expected Semicolon after function declaration")
+                    };
+                    let end = *end;
+                    return Some(self.push_decl(Decl::Function(decl), function_span + end));
+                }
                 t => panic!("unexpected token in decl: {t:?}"),
             }
         }
 
         None
+    }
+
+    pub(super) fn try_parse_function_decl(
+        &mut self,
+    ) -> Option<Spanned<crate::parse::ast::FunctionDecl>> {
+        let start_pos = self.pos;
+        let Spanned {
+            value: ret_typ,
+            span: start,
+        } = self.try_parse_type()?;
+        let Some(Spanned {
+            value: TokenKind::Ident(name),
+            ..
+        }) = self.next()
+        else {
+            self.pos = start_pos;
+            return None;
+        };
+        let name = name.clone();
+        if self.peek().map(|token| &token.value) != Some(&TokenKind::Punct(Punct::Lparen)) {
+            self.pos = start_pos;
+            return None;
+        }
+        self.next();
+
+        let mut params = Vec::new();
+        if self.peek().map(|token| &token.value) != Some(&TokenKind::Punct(Punct::Rparen)) {
+            loop {
+                let Some(Spanned { value: typ, .. }) = self.try_parse_type() else {
+                    panic!("expected parameter type")
+                };
+                let name = match self.peek().map(|token| &token.value) {
+                    Some(TokenKind::Ident(_)) => match self.next().unwrap().value.clone() {
+                        TokenKind::Ident(name) => Some(name),
+                        _ => unreachable!(),
+                    },
+                    _ => None,
+                };
+                params.push(crate::parse::ast::Param { typ, name });
+
+                match self.peek().map(|token| &token.value) {
+                    Some(TokenKind::Punct(Punct::Comma)) => {
+                        self.next();
+                    }
+                    Some(TokenKind::Punct(Punct::Rparen)) => break,
+                    token => panic!("expected Comma or Rparen in parameter list, found {token:?}"),
+                }
+            }
+        }
+
+        let Some(Spanned {
+            value: TokenKind::Punct(Punct::Rparen),
+            span: end,
+        }) = self.next()
+        else {
+            panic!("expected Rparen after function parameters")
+        };
+        Some(Spanned {
+            value: crate::parse::ast::FunctionDecl {
+                ret_typ,
+                name,
+                params,
+                variadic: false,
+            },
+            span: start + *end,
+        })
     }
 
     fn push_decl(&mut self, decl: Decl, span: Span) -> DeclId {

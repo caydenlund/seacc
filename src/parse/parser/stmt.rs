@@ -1,5 +1,5 @@
 use super::Parser;
-use crate::lex::token::{Punct, TokenKind};
+use crate::lex::token::{Keyword, Punct, TokenKind};
 use crate::parse::ast::{Stmt, StmtId};
 use crate::{Span, Spanned};
 
@@ -9,50 +9,96 @@ impl Parser<'_> {
             return self.push_stmt(Stmt::Decl(decl), self.ast.decl(decl).span);
         }
 
+        let tok = self.peek().map(|t| &t.value);
+        match tok {
+            Some(TokenKind::Punct(Punct::Lcurly)) => self.parse_stmt_block(),
+            Some(TokenKind::Keyword(Keyword::Return)) => self.parse_stmt_return(),
+            Some(TokenKind::Keyword(
+                kw @ (Keyword::If
+                | Keyword::For
+                | Keyword::While
+                | Keyword::Do
+                | Keyword::Break
+                | Keyword::Switch
+                | Keyword::Continue),
+            )) => {
+                todo!("implement {kw:?} stmts")
+            }
+            Some(_) => self.parse_stmt_expr(),
+            None => panic!("unexpected eof"),
+        }
+    }
+
+    fn parse_stmts(&mut self) -> Vec<StmtId> {
+        let mut stmts = Vec::new();
+        while self.peek().map(|t| &t.value) != Some(&TokenKind::Punct(Punct::Rcurly)) {
+            stmts.push(self.parse_stmt());
+        }
+        stmts
+    }
+
+    fn parse_stmt_block(&mut self) -> StmtId {
         let Some(Spanned {
-            value: tok,
+            value: TokenKind::Punct(Punct::Lcurly),
             span: start,
-        }) = self.peek()
+        }) = self.next()
         else {
-            panic!("unexpected eof");
+            panic!("stmt block didn't find Lcurly");
         };
         let start = *start;
 
-        if *tok == TokenKind::Punct(Punct::Lcurly) {
-            self.next();
-            let mut stmts = Vec::new();
-            while self.pos < self.tokens.len()
-                && self.peek().map(|t| &t.value) != Some(&TokenKind::Punct(Punct::Rcurly))
-            {
-                stmts.push(self.parse_stmt());
-            }
-            let Some(next) = self.next() else {
-                panic!("unexpected eof");
-            };
-            let Spanned {
-                value: TokenKind::Punct(Punct::Rcurly),
-                span: end,
-            } = next
-            else {
-                panic!("not rcurly");
-            };
-            let end = *end;
-            return self.push_stmt(Stmt::Block(stmts), start + end);
-        }
+        let stmts = self.parse_stmts();
 
-        let expr = self.parse_expr();
-        let Some(next) = self.next() else {
-            panic!("unexpected eof");
-        };
-        let Spanned {
-            value: TokenKind::Punct(Punct::Semicolon),
+        let Some(Spanned {
+            value: TokenKind::Punct(Punct::Rcurly),
             span: end,
-        } = next
+        }) = self.next()
         else {
-            panic!("expected semicolon, got {:?}", next.value);
+            panic!("stmt block didn't find Rcurly");
         };
         let end = *end;
-        self.push_stmt(Stmt::Expr(expr), start + end)
+
+        self.push_stmt(Stmt::Block(stmts), start + end)
+    }
+
+    fn parse_stmt_return(&mut self) -> StmtId {
+        let Some(Spanned {
+            value: TokenKind::Keyword(Keyword::Return),
+            span: start,
+        }) = self.next()
+        else {
+            panic!("return stmt didn't find Return");
+        };
+        let start = *start;
+
+        let expr = self
+            .peek()
+            .map(|t| t.value.clone())
+            .and_then(|t| (t != TokenKind::Punct(Punct::Semicolon)).then(|| self.parse_expr()));
+
+        let Some(Spanned {
+            value: TokenKind::Punct(Punct::Semicolon),
+            span: end,
+        }) = self.next()
+        else {
+            panic!("return stmt didn't find Semicolon");
+        };
+        let end = *end;
+
+        self.push_stmt(Stmt::Return(expr), start + end)
+    }
+
+    fn parse_stmt_expr(&mut self) -> StmtId {
+        let expr = self.parse_expr();
+        let Some(Spanned {
+            value: TokenKind::Punct(Punct::Semicolon),
+            span: end,
+        }) = self.next()
+        else {
+            panic!("expr stmt didn't find Semicolon");
+        };
+        let end = *end;
+        self.push_stmt(Stmt::Expr(expr), self.ast.expr(expr).span + end)
     }
 
     fn push_stmt(&mut self, stmt: Stmt, span: Span) -> StmtId {
@@ -165,6 +211,23 @@ mod tests {
                 typ: Type::Float,
                 name: "d".into(),
                 init: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_return_without_a_value() {
+        let tokens = lex("return;");
+        let mut parser = Parser::new(&tokens);
+
+        assert_eq!(parser.parse_stmt(), StmtId(0));
+        assert_eq!(parser.ast.stmts[0].value, Stmt::Return(None));
+        assert_eq!(
+            parser.ast.stmts[0].span,
+            Span {
+                file: 7,
+                start: 0,
+                end: 7,
             }
         );
     }
