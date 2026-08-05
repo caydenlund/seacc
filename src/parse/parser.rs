@@ -1,5 +1,5 @@
 use super::ParseErrorKind;
-use crate::lex::token::{Punct, Token, TokenKind};
+use crate::lex::token::Token;
 use crate::parse::ast::{Ast, BinaryOp, Expr, ExprId, ItemId, UnaryOp};
 use crate::{Span, Spanned};
 
@@ -30,15 +30,13 @@ impl<'a> Parser<'a> {
         ParsedOutput { ast: self.ast }
     }
 
-    fn next(&mut self) -> &Token {
-        let t = &self.tokens[self.pos];
-        if self.pos < self.tokens.len() - 1 && !matches!(t.value, TokenKind::Eof) {
-            self.pos += 1;
-        }
-        t
+    fn next(&mut self) -> Option<&Token> {
+        let token = self.tokens.get(self.pos)?;
+        self.pos += 1;
+        Some(token)
     }
 
-    fn peek(&self) -> &Token {
-        &self.tokens[self.pos]
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
     }
 }

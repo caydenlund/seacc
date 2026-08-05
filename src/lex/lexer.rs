@@ -93,7 +93,6 @@ impl<'a> Lexer<'a> {
                 _ => self.lex_unexpected(),
             }
         }
-        self.push_token(TokenKind::Eof, self.pos);
         if !self.input.is_empty() && !self.input.ends_with('\n') {
             self.push_error(LexErrorKind::MissingFinalNewline, self.pos);
         }
@@ -327,12 +326,12 @@ mod tests {
 
     #[test]
     fn empty_input_has_no_tokens() {
-        assert_values("", &[TokenKind::Eof]);
+        assert_values("", &[]);
     }
 
     #[test]
     fn whitespace_only_input_has_no_tokens() {
-        assert_values(" \t\r\n  \n", &[TokenKind::Eof]);
+        assert_values(" \t\r\n  \n", &[]);
     }
 
     #[test]
@@ -362,7 +361,6 @@ mod tests {
                 Punct(Percent),
                 Punct(Plus),
                 Punct(Minus),
-                TokenKind::Eof,
             ],
         );
     }
@@ -381,7 +379,6 @@ mod tests {
                 Punct(PercentEq),
                 Punct(PlusEq),
                 Punct(MinusEq),
-                TokenKind::Eof,
             ],
         );
     }
@@ -405,7 +402,6 @@ mod tests {
                 Punct(LtEq),
                 Punct(And),
                 Punct(Or),
-                TokenKind::Eof,
             ],
         );
     }
@@ -418,18 +414,9 @@ mod tests {
 
         assert_values(
             "*= << >>= !=",
-            &[
-                Punct(StarEq),
-                Punct(Lshift),
-                Punct(RshiftEq),
-                Punct(BangEq),
-                TokenKind::Eof,
-            ],
+            &[Punct(StarEq), Punct(Lshift), Punct(RshiftEq), Punct(BangEq)],
         );
-        assert_spans(
-            "*= << >>= !=",
-            &[(0, 2), (3, 5), (6, 9), (10, 12), (12, 12)],
-        );
+        assert_spans("*= << >>= !=", &[(0, 2), (3, 5), (6, 9), (10, 12)]);
     }
 
     #[test]
@@ -451,7 +438,6 @@ mod tests {
                 Keyword(Break),
                 Keyword(Switch),
                 Keyword(Case),
-                TokenKind::Eof,
             ],
         );
     }
@@ -469,7 +455,6 @@ mod tests {
                 Ident("snake_case".into()),
                 Ident("CamelCase".into()),
                 Ident("value_123".into()),
-                TokenKind::Eof,
             ],
         );
     }
@@ -482,32 +467,20 @@ mod tests {
         use TokenKind::Punct;
         use TokenKind::{Ident, Keyword};
 
-        assert_values(
-            "foo + if",
-            &[
-                Ident("foo".into()),
-                Punct(Plus),
-                Keyword(If),
-                TokenKind::Eof,
-            ],
-        );
-        assert_spans("foo + if", &[(0, 3), (4, 5), (6, 8), (8, 8)]);
+        assert_values("foo + if", &[Ident("foo".into()), Punct(Plus), Keyword(If)]);
+        assert_spans("foo + if", &[(0, 3), (4, 5), (6, 8)]);
     }
 
     #[test]
     fn a_line_comment_at_end_of_input_is_discarded() {
-        assert_values("// comment until eof", &[TokenKind::Eof]);
+        assert_values("// comment until eof", &[]);
     }
 
     #[test]
     fn consecutive_line_comments_are_discarded() {
-        assert_values("// first// second", &[TokenKind::Eof]);
-        assert_values("// first\n// second", &[TokenKind::Eof]);
+        assert_values("// first// second", &[]);
+        assert_values("// first\n// second", &[]);
     }
-
-    // The following tests intentionally describe behavior that the lexer does
-    // not implement yet. They should fail until the corresponding lexer code
-    // is written.
 
     #[test]
     fn whitespace_between_tokens_is_ignored() {
@@ -515,10 +488,7 @@ mod tests {
         use P::*;
         use TokenKind::Punct;
 
-        assert_values(
-            "(\n\t+\r)",
-            &[Punct(Lparen), Punct(Plus), Punct(Rparen), TokenKind::Eof],
-        );
+        assert_values("(\n\t+\r)", &[Punct(Lparen), Punct(Plus), Punct(Rparen)]);
     }
 
     #[test]
@@ -527,7 +497,7 @@ mod tests {
         use P::*;
         use TokenKind::Punct;
 
-        assert_values("// comment\n+", &[Punct(Plus), TokenKind::Eof]);
+        assert_values("// comment\n+", &[Punct(Plus)]);
     }
 
     #[test]
@@ -536,7 +506,7 @@ mod tests {
         use P::*;
         use TokenKind::Punct;
 
-        assert_values("/* comment */ +", &[Punct(Plus), TokenKind::Eof]);
+        assert_values("/* comment */ +", &[Punct(Plus)]);
     }
 
     #[test]
@@ -545,13 +515,7 @@ mod tests {
 
         assert_values(
             "0 1 42 18446744073709551615",
-            &[
-                Integer(0),
-                Integer(1),
-                Integer(42),
-                Integer(u64::MAX),
-                TokenKind::Eof,
-            ],
+            &[Integer(0), Integer(1), Integer(42), Integer(u64::MAX)],
         );
     }
 
@@ -561,7 +525,7 @@ mod tests {
 
         assert_values(
             "0.0 1.5 42.125",
-            &[Decimal(0.0), Decimal(1.5), Decimal(42.125), TokenKind::Eof],
+            &[Decimal(0.0), Decimal(1.5), Decimal(42.125)],
         );
     }
 
@@ -575,7 +539,6 @@ mod tests {
                 String("hello".into()),
                 String("with spaces".into()),
                 String("escaped \"quote\"".into()),
-                TokenKind::Eof,
             ],
         );
     }
@@ -584,18 +547,15 @@ mod tests {
     fn empty_strings_are_valid() {
         use TokenKind::String;
 
-        assert_values(
-            "\"\"",
-            &[String(std::string::String::new()), TokenKind::Eof],
-        );
+        assert_values("\"\"", &[String(std::string::String::new())]);
     }
 
     #[test]
     fn string_spans_are_utf8_byte_offsets() {
         use TokenKind::String;
 
-        assert_values("\"h\u{e9}\"", &[String("h\u{e9}".into()), TokenKind::Eof]);
-        assert_spans("\"h\u{e9}\"", &[(0, 5), (5, 5)]);
+        assert_values("\"h\u{e9}\"", &[String("h\u{e9}".into())]);
+        assert_spans("\"h\u{e9}\"", &[(0, 5)]);
     }
 
     #[test]
@@ -603,14 +563,7 @@ mod tests {
         let mut lexer = Lexer::new(7, "\"unterminated");
         lexer.lex();
 
-        assert_eq!(
-            lexer
-                .tokens
-                .iter()
-                .map(|token| &token.value)
-                .collect::<Vec<_>>(),
-            &[&TokenKind::Eof]
-        );
+        assert!(lexer.tokens.is_empty());
         assert_eq!(lexer.errors.len(), 2);
         assert_eq!(lexer.errors[0].value, LexErrorKind::UnterminatedString);
         assert_eq!(lexer.errors[1].value, LexErrorKind::MissingFinalNewline);

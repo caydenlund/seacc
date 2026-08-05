@@ -114,7 +114,7 @@ impl Parser<'_> {
                 continue;
             }
 
-            let Some((op, lbp, rbp)) = self.peek().value.infix_bp() else {
+            let Some((op, lbp, rbp)) = self.peek().and_then(|token| token.value.infix_bp()) else {
                 break;
             };
 
@@ -134,10 +134,13 @@ impl Parser<'_> {
     }
 
     fn parse_expr_prefix(&mut self) -> ExprId {
-        let Token {
+        let Some(Token {
             value: tok,
             span: start,
-        } = self.next().clone();
+        }) = self.next().cloned()
+        else {
+            panic!("expected expression, found end of input");
+        };
         if let Some((op, bp)) = tok.prefix_bp() {
             let operand = self.parse_expr_bp(bp);
             return self.push_expr(
@@ -163,15 +166,18 @@ impl Parser<'_> {
             return None;
         }
 
-        match self.peek().value {
-            TokenKind::Punct(Punct::Lsquare) => {
+        match self.peek().map(|token| &token.value) {
+            Some(TokenKind::Punct(Punct::Lsquare)) => {
                 // `[]`: Array subscripting
-                let start = self.next().span;
+                let start = self.next().expect("index opener disappeared").span;
                 let ind = self.parse_expr_bp(0);
-                let Token {
+                let Some(Token {
                     value: tok,
                     span: end,
-                } = self.next();
+                }) = self.next()
+                else {
+                    panic!("expr: expected Rsquare but found end of input");
+                };
                 let end = *end;
                 assert!(
                     matches!(tok, &TokenKind::Punct(Punct::Rsquare)),
@@ -179,32 +185,41 @@ impl Parser<'_> {
                 );
                 Some(self.push_expr(Expr::GetIndex { obj: lhs, ind }, start + end))
             }
-            TokenKind::Punct(Punct::Lparen) => {
+            Some(TokenKind::Punct(Punct::Lparen)) => {
                 // `()`: Function call
-                let start = self.next().span;
+                let start = self.next().expect("call opener disappeared").span;
                 let mut args = Vec::new();
 
-                if self.peek().value != TokenKind::Punct(Punct::Rparen) {
+                if !matches!(
+                    self.peek().map(|token| &token.value),
+                    Some(TokenKind::Punct(Punct::Rparen))
+                ) {
                     loop {
                         args.push(self.parse_expr_bp(0));
-                        match self.peek().value {
-                            TokenKind::Punct(Punct::Comma) => {
+                        match self.peek().map(|token| &token.value) {
+                            Some(TokenKind::Punct(Punct::Comma)) => {
                                 self.next();
                             }
-                            TokenKind::Punct(Punct::Rparen) => {
+                            Some(TokenKind::Punct(Punct::Rparen)) => {
                                 break;
                             }
                             _ => {
-                                panic!("expected Comma or Rparen but found {:?}", self.peek().value)
+                                panic!(
+                                    "expected Comma or Rparen but found {:?}",
+                                    self.peek().map(|token| &token.value)
+                                )
                             }
                         }
                     }
                 }
 
-                let Token {
+                let Some(Token {
                     value: tok,
                     span: end,
-                } = self.next();
+                }) = self.next()
+                else {
+                    panic!("expr: expected Rparen but found end of input");
+                };
                 let end = *end;
                 assert!(
                     matches!(tok, &TokenKind::Punct(Punct::Rparen)),
@@ -216,9 +231,11 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_expr_parens(&mut self, start: Span) -> ExprId {
+    fn parse_expr_parens(&mut self, _start: Span) -> ExprId {
         let e = self.parse_expr_bp(0);
-        let tok = &self.next().value;
+        let Some(tok) = self.next().map(|token| &token.value) else {
+            panic!("expr: expected Rparen but found end of input");
+        };
         assert!(
             matches!(tok, &TokenKind::Punct(Punct::Rparen)),
             "expr: expected Rparen but found {tok:?}"

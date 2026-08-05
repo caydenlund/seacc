@@ -14,7 +14,6 @@ pub enum TokenKind {
     Integer(u64),
     Decimal(f64),
     String(String),
-    Eof,
 }
 
 pub type Token = Spanned<TokenKind>;
