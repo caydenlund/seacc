@@ -19,3 +19,15 @@ pub fn lex(file: FileId, input: &str) -> (Result<Vec<Token>, Vec<LexError>>, Lin
     };
     (result, LineMap::from(lexer.lines.into_boxed_slice()))
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    // lexes the given string (with an added newline), panicking on error
+    pub fn lex(input: &str) -> Vec<Token> {
+        super::lex(7, &(String::from(input) + "\n"))
+            .0
+            .expect("unable to lex input '{input:?}'")
+    }
+}

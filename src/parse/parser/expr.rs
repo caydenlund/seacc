@@ -124,9 +124,9 @@ impl Parser<'_> {
 
             self.next();
             let rhs = self.parse_expr_bp(rbp);
-            lhs = self.push_expr(
+            lhs = self.ast.push_expr(
                 Expr::Binary { lhs, op, rhs },
-                self.ast.exprs[lhs.0 as usize].span + self.ast.exprs[rhs.0 as usize].span,
+                self.ast.expr_span(lhs) + self.ast.expr_span(rhs),
             );
         }
 
@@ -143,17 +143,17 @@ impl Parser<'_> {
         };
         if let Some((op, bp)) = tok.prefix_bp() {
             let operand = self.parse_expr_bp(bp);
-            return self.push_expr(
+            return self.ast.push_expr(
                 Expr::Unary { op, operand },
-                start + self.ast.expr(operand).span,
+                start + self.ast.expr_span(operand),
             );
         }
 
         match tok {
-            TokenKind::Ident(s) => self.push_expr(Expr::Ident(s), start), // TODO: handle types
-            TokenKind::Integer(n) => self.push_expr(Expr::Integer(n), start),
-            TokenKind::Decimal(f) => self.push_expr(Expr::Decimal(f), start),
-            TokenKind::String(s) => self.push_expr(Expr::String(s), start),
+            TokenKind::Ident(s) => self.ast.push_expr(Expr::Ident(s), start), // TODO: handle types
+            TokenKind::Integer(n) => self.ast.push_expr(Expr::Integer(n), start),
+            TokenKind::Decimal(f) => self.ast.push_expr(Expr::Decimal(f), start),
+            TokenKind::String(s) => self.ast.push_expr(Expr::String(s), start),
             TokenKind::Punct(Punct::Lparen) => self.parse_expr_parens(start),
             _ => todo!("invalid token for expression: {tok:?}"),
         }
@@ -183,7 +183,10 @@ impl Parser<'_> {
                     matches!(tok, &TokenKind::Punct(Punct::Rsquare)),
                     "expr: expected Rsquare but found {tok:?}"
                 );
-                Some(self.push_expr(Expr::GetIndex { obj: lhs, ind }, start + end))
+                Some(
+                    self.ast
+                        .push_expr(Expr::GetIndex { obj: lhs, ind }, start + end),
+                )
             }
             Some(TokenKind::Punct(Punct::Lparen)) => {
                 // `()`: Function call
@@ -225,7 +228,10 @@ impl Parser<'_> {
                     matches!(tok, &TokenKind::Punct(Punct::Rparen)),
                     "expr: expected Rparen but found {tok:?}"
                 );
-                Some(self.push_expr(Expr::Call { callee: lhs, args }, start + end))
+                Some(
+                    self.ast
+                        .push_expr(Expr::Call { callee: lhs, args }, start + end),
+                )
             }
             _ => None,
         }
@@ -242,218 +248,88 @@ impl Parser<'_> {
         );
         e
     }
-
-    fn push_expr(&mut self, expr: Expr, span: Span) -> ExprId {
-        self.ast.exprs.push(Spanned { value: expr, span });
-        #[allow(clippy::cast_possible_truncation)]
-        ExprId((self.ast.exprs.len() - 1) as u32)
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-
     use super::*;
+    use crate::parse::ast::tests::AstBuilder;
 
-    fn parse_expr(input: &str) -> Vec<Expr> {
-        let tokens = crate::lex::lex(7, &format!("{input}\n"))
-            .0
-            .expect("should tokenize");
+    fn assert_parse(input: &str, build: impl FnOnce(&AstBuilder)) {
+        let tokens = crate::lex::tests::lex(input);
         let mut parser = Parser::new(&tokens);
+        let ast = AstBuilder::default();
+        build(&ast);
         parser.parse_expr();
-        parser.ast.exprs.into_iter().map(|s| s.value).collect()
-    }
-
-    #[derive(Default, Clone)]
-    struct ExprBuilder {
-        exprs: RefCell<Vec<Expr>>,
-    }
-    impl ExprBuilder {
-        fn last_id(&self) -> ExprId {
-            #[allow(clippy::cast_possible_truncation)]
-            ExprId((self.exprs.borrow().len() - 1) as u32)
-        }
-
-        fn ident(&self, s: &str) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Ident(s.into()));
-            self.last_id()
-        }
-
-        fn int(&self, value: u64) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Integer(value));
-            self.last_id()
-        }
-
-        fn float(&self, value: f64) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Decimal(value));
-            self.last_id()
-        }
-
-        fn string(&self, value: &str) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::String(value.into()));
-            self.last_id()
-        }
-
-        fn binop(&self, lhs: ExprId, op: BinaryOp, rhs: ExprId) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Binary { lhs, op, rhs });
-            self.last_id()
-        }
-
-        fn unary(&self, op: UnaryOp, operand: ExprId) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Unary { op, operand });
-            self.last_id()
-        }
-
-        fn index(&self, obj: ExprId, ind: ExprId) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::GetIndex { obj, ind });
-            self.last_id()
-        }
-
-        fn mul(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Mul, rhs)
-        }
-
-        fn modu(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Mod, rhs)
-        }
-
-        fn div(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Div, rhs)
-        }
-
-        fn add(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Add, rhs)
-        }
-
-        fn sub(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Sub, rhs)
-        }
-
-        fn assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Assign, rhs)
-        }
-
-        fn mul_assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::MulAssign, rhs)
-        }
-
-        fn modu_assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::ModAssign, rhs)
-        }
-
-        fn div_assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::DivAssign, rhs)
-        }
-
-        fn add_assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::AddAssign, rhs)
-        }
-
-        fn sub_assign(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::SubAssign, rhs)
-        }
-
-        fn lshift(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Lshift, rhs)
-        }
-
-        fn rshift(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Rshift, rhs)
-        }
-
-        fn eq(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Eq, rhs)
-        }
-
-        fn neq(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Neq, rhs)
-        }
-
-        fn lt(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Lt, rhs)
-        }
-
-        fn lt_eq(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::LtEq, rhs)
-        }
-
-        fn gt(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::Gt, rhs)
-        }
-
-        fn gt_eq(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::GtEq, rhs)
-        }
-
-        fn logic_and(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::LogicAnd, rhs)
-        }
-
-        fn logic_or(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
-            self.binop(lhs, BinaryOp::LogicOr, rhs)
-        }
-
-        fn call(&self, callee: ExprId, args: Vec<ExprId>) -> ExprId {
-            self.exprs.borrow_mut().push(Expr::Call { callee, args });
-            self.last_id()
-        }
-    }
-
-    fn assert_parse(input: &str, build: impl FnOnce(&ExprBuilder)) {
-        let exprs = parse_expr(input);
-        let expected = ExprBuilder::default();
-        build(&expected);
-        assert_eq!(exprs, *expected.exprs.borrow(), "input: {input}");
+        ast.assert_matches(&parser.ast);
     }
 
     #[test]
     fn simple_binop() {
-        assert_parse("1 * 2", |eb| {
-            eb.mul(eb.int(1), eb.int(2));
+        assert_parse("1 * 2", |ast| {
+            ast.expr_mul(ast.expr_int(1), ast.expr_int(2));
         });
 
-        assert_parse("a % 123", |eb| {
-            eb.modu(eb.ident("a"), eb.int(123));
+        assert_parse("a % 123", |ast| {
+            ast.expr_mod(ast.expr_ident("a"), ast.expr_int(123));
         });
 
-        assert_parse("1.2 / foo", |eb| {
-            eb.div(eb.float(1.2), eb.ident("foo"));
+        assert_parse("1.2 / foo", |ast| {
+            ast.expr_div(ast.expr_float(1.2), ast.expr_ident("foo"));
         });
 
-        assert_parse("1 + 2", |eb| {
-            eb.add(eb.int(1), eb.int(2));
+        assert_parse("1 + 2", |ast| {
+            ast.expr_add(ast.expr_int(1), ast.expr_int(2));
         });
 
-        assert_parse("1 - 2", |eb| {
-            eb.sub(eb.int(1), eb.int(2));
+        assert_parse("1 - 2", |ast| {
+            ast.expr_sub(ast.expr_int(1), ast.expr_int(2));
         });
     }
 
     #[test]
     fn binop_prec() {
         // `*` over `+` and `-`
-        assert_parse("1 + 2 * 3 - 4", |eb| {
-            eb.sub(eb.add(eb.int(1), eb.mul(eb.int(2), eb.int(3))), eb.int(4));
+        assert_parse("1 + 2 * 3 - 4", |ast| {
+            ast.expr_sub(
+                ast.expr_add(
+                    ast.expr_int(1),
+                    ast.expr_mul(ast.expr_int(2), ast.expr_int(3)),
+                ),
+                ast.expr_int(4),
+            );
         });
 
         // left-assoc. addition and multiplication
-        assert_parse("1 + 2 + 3 * 4 * 5", |eb| {
-            eb.add(
-                eb.add(eb.int(1), eb.int(2)),
-                eb.mul(eb.mul(eb.int(3), eb.int(4)), eb.int(5)),
+        assert_parse("1 + 2 + 3 * 4 * 5", |ast| {
+            ast.expr_add(
+                ast.expr_add(ast.expr_int(1), ast.expr_int(2)),
+                ast.expr_mul(
+                    ast.expr_mul(ast.expr_int(3), ast.expr_int(4)),
+                    ast.expr_int(5),
+                ),
             );
         });
 
         // right-assoc. assignment
-        assert_parse("a = b += c *= d -= e -= f", |eb| {
-            eb.assign(
-                eb.ident("a"),
-                eb.add_assign(
-                    eb.ident("b"),
-                    eb.mul_assign(
-                        eb.ident("c"),
-                        eb.sub_assign(eb.ident("d"), eb.sub_assign(eb.ident("e"), eb.ident("f"))),
+        assert_parse("a = b += c *= d -= e -= f", |ast| {
+            ast.expr_set(
+                ast.expr_ident("a"),
+                ast.expr_binary(
+                    ast.expr_ident("b"),
+                    BinaryOp::AddAssign,
+                    ast.expr_binary(
+                        ast.expr_ident("c"),
+                        BinaryOp::MulAssign,
+                        ast.expr_binary(
+                            ast.expr_ident("d"),
+                            BinaryOp::SubAssign,
+                            ast.expr_binary(
+                                ast.expr_ident("e"),
+                                BinaryOp::SubAssign,
+                                ast.expr_ident("f"),
+                            ),
+                        ),
                     ),
                 ),
             );
@@ -462,166 +338,221 @@ mod tests {
 
     #[test]
     fn atomic() {
-        assert_parse("name", |eb| {
-            eb.ident("name");
+        assert_parse("name", |ast| {
+            ast.expr_ident("name");
         });
-        assert_parse("42", |eb| {
-            eb.int(42);
+        assert_parse("42", |ast| {
+            ast.expr_int(42);
         });
-        assert_parse("3.5", |eb| {
-            eb.float(3.5);
+        assert_parse("3.5", |ast| {
+            ast.expr_float(3.5);
         });
-        assert_parse("\"hello\"", |eb| {
-            eb.string("hello");
+        assert_parse("\"hello\"", |ast| {
+            ast.expr_str("hello");
         });
     }
 
     #[test]
     fn mul_add() {
-        assert_parse("a * b / c % d", |eb| {
-            eb.modu(
-                eb.div(eb.mul(eb.ident("a"), eb.ident("b")), eb.ident("c")),
-                eb.ident("d"),
+        assert_parse("a * b / c % d", |ast| {
+            ast.expr_mod(
+                ast.expr_div(
+                    ast.expr_mul(ast.expr_ident("a"), ast.expr_ident("b")),
+                    ast.expr_ident("c"),
+                ),
+                ast.expr_ident("d"),
             );
         });
-        assert_parse("a + b - c + d", |eb| {
-            eb.add(
-                eb.sub(eb.add(eb.ident("a"), eb.ident("b")), eb.ident("c")),
-                eb.ident("d"),
+        assert_parse("a + b - c + d", |ast| {
+            ast.expr_add(
+                ast.expr_sub(
+                    ast.expr_add(ast.expr_ident("a"), ast.expr_ident("b")),
+                    ast.expr_ident("c"),
+                ),
+                ast.expr_ident("d"),
             );
         });
     }
 
     #[test]
     fn shift_eq_prec() {
-        assert_parse("a + b << c * d", |eb| {
-            eb.lshift(
-                eb.add(eb.ident("a"), eb.ident("b")),
-                eb.mul(eb.ident("c"), eb.ident("d")),
+        assert_parse("a + b << c * d", |ast| {
+            ast.expr_binary(
+                ast.expr_add(ast.expr_ident("a"), ast.expr_ident("b")),
+                BinaryOp::Lshift,
+                ast.expr_mul(ast.expr_ident("c"), ast.expr_ident("d")),
             );
         });
-        assert_parse("a >> b < c <= d > e >= f", |eb| {
-            eb.gt_eq(
-                eb.gt(
-                    eb.lt_eq(
-                        eb.lt(eb.rshift(eb.ident("a"), eb.ident("b")), eb.ident("c")),
-                        eb.ident("d"),
+        assert_parse("a >> b < c <= d > e >= f", |ast| {
+            ast.expr_binary(
+                ast.expr_binary(
+                    ast.expr_binary(
+                        ast.expr_binary(
+                            ast.expr_binary(
+                                ast.expr_ident("a"),
+                                BinaryOp::Rshift,
+                                ast.expr_ident("b"),
+                            ),
+                            BinaryOp::Lt,
+                            ast.expr_ident("c"),
+                        ),
+                        BinaryOp::LtEq,
+                        ast.expr_ident("d"),
                     ),
-                    eb.ident("e"),
+                    BinaryOp::Gt,
+                    ast.expr_ident("e"),
                 ),
-                eb.ident("f"),
+                BinaryOp::GtEq,
+                ast.expr_ident("f"),
             );
         });
-        assert_parse("a == b != c", |eb| {
-            eb.neq(eb.eq(eb.ident("a"), eb.ident("b")), eb.ident("c"));
+        assert_parse("a == b != c", |ast| {
+            ast.expr_binary(
+                ast.expr_eq(ast.expr_ident("a"), ast.expr_ident("b")),
+                BinaryOp::Neq,
+                ast.expr_ident("c"),
+            );
         });
     }
 
     #[test]
     fn logic_prec() {
-        assert_parse("a || b && c || d", |eb| {
-            eb.logic_or(
-                eb.logic_or(eb.ident("a"), eb.logic_and(eb.ident("b"), eb.ident("c"))),
-                eb.ident("d"),
+        assert_parse("a || b && c || d", |ast| {
+            ast.expr_binary(
+                ast.expr_binary(
+                    ast.expr_ident("a"),
+                    BinaryOp::LogicOr,
+                    ast.expr_binary(ast.expr_ident("b"), BinaryOp::LogicAnd, ast.expr_ident("c")),
+                ),
+                BinaryOp::LogicOr,
+                ast.expr_ident("d"),
             );
         });
-        assert_parse("a && b && c", |eb| {
-            eb.logic_and(eb.logic_and(eb.ident("a"), eb.ident("b")), eb.ident("c"));
+        assert_parse("a && b && c", |ast| {
+            ast.expr_binary(
+                ast.expr_binary(ast.expr_ident("a"), BinaryOp::LogicAnd, ast.expr_ident("b")),
+                BinaryOp::LogicAnd,
+                ast.expr_ident("c"),
+            );
         });
     }
 
     #[test]
     fn prefix_before_infix() {
-        assert_parse("-a * !b + -c", |eb| {
-            eb.add(
-                eb.mul(
-                    eb.unary(UnaryOp::Negate, eb.ident("a")),
-                    eb.unary(UnaryOp::Not, eb.ident("b")),
+        assert_parse("-a * !b + -c", |ast| {
+            ast.expr_add(
+                ast.expr_mul(
+                    ast.expr_neg(ast.expr_ident("a")),
+                    ast.expr_not(ast.expr_ident("b")),
                 ),
-                eb.unary(UnaryOp::Negate, eb.ident("c")),
+                ast.expr_neg(ast.expr_ident("c")),
             );
         });
-        assert_parse("!!-value", |eb| {
-            eb.unary(
-                UnaryOp::Not,
-                eb.unary(UnaryOp::Not, eb.unary(UnaryOp::Negate, eb.ident("value"))),
-            );
+        assert_parse("!!-value", |ast| {
+            ast.expr_not(ast.expr_not(ast.expr_neg(ast.expr_ident("value"))));
         });
     }
 
     #[test]
     fn parens() {
-        assert_parse("(a + b) * (c - d)", |eb| {
-            eb.mul(
-                eb.add(eb.ident("a"), eb.ident("b")),
-                eb.sub(eb.ident("c"), eb.ident("d")),
+        assert_parse("(a + b) * (c - d)", |ast| {
+            ast.expr_mul(
+                ast.expr_add(ast.expr_ident("a"), ast.expr_ident("b")),
+                ast.expr_sub(ast.expr_ident("c"), ast.expr_ident("d")),
             );
         });
-        assert_parse("a - (b - c)", |eb| {
-            eb.sub(eb.ident("a"), eb.sub(eb.ident("b"), eb.ident("c")));
+        assert_parse("a - (b - c)", |ast| {
+            ast.expr_sub(
+                ast.expr_ident("a"),
+                ast.expr_sub(ast.expr_ident("b"), ast.expr_ident("c")),
+            );
         });
-        assert_parse("((value))", |eb| {
-            eb.ident("value");
+        assert_parse("((value))", |ast| {
+            ast.expr_ident("value");
         });
     }
 
     #[test]
     fn postfix_before_prefix() {
-        assert_parse("items[i + 1] * -values[j]", |eb| {
-            eb.mul(
-                eb.index(eb.ident("items"), eb.add(eb.ident("i"), eb.int(1))),
-                eb.unary(UnaryOp::Negate, eb.index(eb.ident("values"), eb.ident("j"))),
+        assert_parse("items[i + 1] * -values[j]", |ast| {
+            ast.expr_mul(
+                ast.expr_ind(
+                    ast.expr_ident("items"),
+                    ast.expr_add(ast.expr_ident("i"), ast.expr_int(1)),
+                ),
+                ast.expr_neg(ast.expr_ind(ast.expr_ident("values"), ast.expr_ident("j"))),
             );
         });
-        assert_parse("matrix[row][column]", |eb| {
-            eb.index(
-                eb.index(eb.ident("matrix"), eb.ident("row")),
-                eb.ident("column"),
+        assert_parse("matrix[row][column]", |ast| {
+            ast.expr_ind(
+                ast.expr_ind(ast.expr_ident("matrix"), ast.expr_ident("row")),
+                ast.expr_ident("column"),
             );
         });
     }
 
     #[test]
     fn assign() {
-        assert_parse("a = b = c + d * e", |eb| {
-            eb.assign(
-                eb.ident("a"),
-                eb.assign(
-                    eb.ident("b"),
-                    eb.add(eb.ident("c"), eb.mul(eb.ident("d"), eb.ident("e"))),
+        assert_parse("a = b = c + d * e", |ast| {
+            ast.expr_set(
+                ast.expr_ident("a"),
+                ast.expr_set(
+                    ast.expr_ident("b"),
+                    ast.expr_add(
+                        ast.expr_ident("c"),
+                        ast.expr_mul(ast.expr_ident("d"), ast.expr_ident("e")),
+                    ),
                 ),
             );
         });
-        assert_parse("a <<= b >>= c", |eb| {
-            eb.binop(
-                eb.ident("a"),
+        assert_parse("a <<= b >>= c", |ast| {
+            ast.expr_binary(
+                ast.expr_ident("a"),
                 BinaryOp::LshiftAssign,
-                eb.binop(eb.ident("b"), BinaryOp::RshiftAssign, eb.ident("c")),
+                ast.expr_binary(
+                    ast.expr_ident("b"),
+                    BinaryOp::RshiftAssign,
+                    ast.expr_ident("c"),
+                ),
             );
         });
-        assert_parse("a /= b %= c", |eb| {
-            eb.div_assign(eb.ident("a"), eb.modu_assign(eb.ident("b"), eb.ident("c")));
+        assert_parse("a /= b %= c", |ast| {
+            ast.expr_binary(
+                ast.expr_ident("a"),
+                BinaryOp::DivAssign,
+                ast.expr_binary(
+                    ast.expr_ident("b"),
+                    BinaryOp::ModAssign,
+                    ast.expr_ident("c"),
+                ),
+            );
         });
     }
 
     #[test]
     fn call() {
-        assert_parse("foo()", |eb| {
-            eb.call(eb.ident("foo"), Vec::new());
+        assert_parse("foo()", |ast| {
+            ast.expr_call(ast.expr_ident("foo"), &[]);
         });
-        assert_parse("foo(a, 1, 3.0)", |eb| {
-            eb.call(
-                eb.ident("foo"),
-                vec![eb.ident("a"), eb.int(1), eb.float(3.0)],
+        assert_parse("foo(a, 1, 3.0)", |ast| {
+            ast.expr_call(
+                ast.expr_ident("foo"),
+                &[ast.expr_ident("a"), ast.expr_int(1), ast.expr_float(3.0)],
             );
         });
-        assert_parse("foo(bar())", |eb| {
-            eb.call(eb.ident("foo"), vec![eb.call(eb.ident("bar"), Vec::new())]);
+        assert_parse("foo(bar())", |ast| {
+            ast.expr_call(
+                ast.expr_ident("foo"),
+                &[ast.expr_call(ast.expr_ident("bar"), &[])],
+            );
         });
-        assert_parse("foo(bar())(1)", |eb| {
-            eb.call(
-                eb.call(eb.ident("foo"), vec![eb.call(eb.ident("bar"), Vec::new())]),
-                vec![eb.int(1)],
+        assert_parse("foo(bar())(1)", |ast| {
+            ast.expr_call(
+                ast.expr_call(
+                    ast.expr_ident("foo"),
+                    &[ast.expr_call(ast.expr_ident("bar"), &[])],
+                ),
+                &[ast.expr_int(1)],
             );
         });
     }

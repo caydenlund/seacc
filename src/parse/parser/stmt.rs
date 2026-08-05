@@ -6,7 +6,9 @@ use crate::{Span, Spanned};
 impl Parser<'_> {
     pub(super) fn parse_stmt(&mut self) -> StmtId {
         if let Some(decl) = self.try_parse_decl() {
-            return self.push_stmt(Stmt::Decl(decl), self.ast.decl(decl).span);
+            return self
+                .ast
+                .push_stmt(Stmt::Decl(decl), self.ast.decl_span(decl));
         }
 
         let tok = self.peek().map(|t| &t.value);
@@ -29,7 +31,7 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_stmts(&mut self) -> Vec<StmtId> {
+    pub(super) fn parse_stmts(&mut self) -> Vec<StmtId> {
         let mut stmts = Vec::new();
         while self.peek().map(|t| &t.value) != Some(&TokenKind::Punct(Punct::Rcurly)) {
             stmts.push(self.parse_stmt());
@@ -58,7 +60,7 @@ impl Parser<'_> {
         };
         let end = *end;
 
-        self.push_stmt(Stmt::Block(stmts), start + end)
+        self.ast.push_stmt(Stmt::Block(stmts), start + end)
     }
 
     fn parse_stmt_return(&mut self) -> StmtId {
@@ -85,7 +87,7 @@ impl Parser<'_> {
         };
         let end = *end;
 
-        self.push_stmt(Stmt::Return(expr), start + end)
+        self.ast.push_stmt(Stmt::Return(expr), start + end)
     }
 
     fn parse_stmt_expr(&mut self) -> StmtId {
@@ -98,21 +100,17 @@ impl Parser<'_> {
             panic!("expr stmt didn't find Semicolon");
         };
         let end = *end;
-        self.push_stmt(Stmt::Expr(expr), self.ast.expr(expr).span + end)
-    }
-
-    fn push_stmt(&mut self, stmt: Stmt, span: Span) -> StmtId {
-        self.ast.stmts.push(Spanned { value: stmt, span });
-        #[allow(clippy::cast_possible_truncation)]
-        StmtId((self.ast.stmts.len() - 1) as u32)
+        self.ast
+            .push_stmt(Stmt::Expr(expr), self.ast.expr_span(expr) + end)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::parse::ast::tests::AstBuilder;
     use crate::{
         lex::token::Token,
-        parse::ast::{BinaryOp, Decl, DeclId, Expr, ExprId, Type},
+        parse::ast::{BinaryOp, Type},
     };
 
     use super::*;
@@ -125,7 +123,14 @@ mod tests {
     fn parse_stmt_expr() {
         let tokens = lex("a += b * c;");
         let mut parser = Parser::new(&tokens);
-        assert_eq!(parser.parse_stmt(), StmtId(0));
+        let ast = AstBuilder::default();
+        let expr = ast.expr_binary(
+            ast.expr_ident("a"),
+            BinaryOp::AddAssign,
+            ast.expr_mul(ast.expr_ident("b"), ast.expr_ident("c")),
+        );
+        let stmt = ast.stmt_expr(expr);
+        assert_eq!(parser.parse_stmt(), stmt);
         assert_eq!(
             parser.ast.stmts[0].span,
             Span {
@@ -134,34 +139,19 @@ mod tests {
                 end: 11
             }
         );
-        assert_eq!(parser.ast.stmts[0].value, Stmt::Expr(ExprId(4)));
-        assert_eq!(parser.ast.exprs[0].value, Expr::Ident("a".into()));
-        assert_eq!(parser.ast.exprs[1].value, Expr::Ident("b".into()));
-        assert_eq!(parser.ast.exprs[2].value, Expr::Ident("c".into()));
-        assert_eq!(
-            parser.ast.exprs[3].value,
-            Expr::Binary {
-                lhs: ExprId(1),
-                rhs: ExprId(2),
-                op: BinaryOp::Mul
-            }
-        );
-        assert_eq!(
-            parser.ast.exprs[4].value,
-            Expr::Binary {
-                lhs: ExprId(0),
-                rhs: ExprId(3),
-                op: BinaryOp::AddAssign
-            }
-        );
+        ast.assert_matches(&parser.ast);
     }
 
     #[test]
     fn parse_stmt_decl() {
         let tokens = lex("int a = b * c; float d;");
         let mut parser = Parser::new(&tokens);
+        let ast = AstBuilder::default();
         // `int a = b * c;`
-        assert_eq!(parser.parse_stmt(), StmtId(0));
+        let init = ast.expr_mul(ast.expr_ident("b"), ast.expr_ident("c"));
+        let a = ast.decl_var(Type::Int, "a", Some(init));
+        let a_stmt = ast.stmt_decl(a);
+        assert_eq!(parser.parse_stmt(), a_stmt);
         assert_eq!(
             parser.ast.stmts[0].span,
             Span {
@@ -170,32 +160,10 @@ mod tests {
                 end: 14
             }
         );
-        assert_eq!(parser.ast.stmts[0].value, Stmt::Decl(DeclId(0)));
-        // `int a = b * c;`
-        assert_eq!(
-            parser.ast.decls[0].value,
-            Decl::Variable {
-                typ: Type::Int,
-                name: "a".into(),
-                init: Some(ExprId(2))
-            }
-        );
-        // `b`
-        assert_eq!(parser.ast.exprs[0].value, Expr::Ident("b".into()));
-        // `c`
-        assert_eq!(parser.ast.exprs[1].value, Expr::Ident("c".into()));
-        // `b * c`
-        assert_eq!(
-            parser.ast.exprs[2].value,
-            Expr::Binary {
-                lhs: ExprId(0),
-                rhs: ExprId(1),
-                op: BinaryOp::Mul
-            }
-        );
         // `float d;`
-        assert_eq!(parser.parse_stmt(), StmtId(1));
-        assert_eq!(parser.ast.stmts[1].value, Stmt::Decl(DeclId(1)));
+        let d = ast.decl_var(Type::Float, "d", None);
+        let d_stmt = ast.stmt_decl(d);
+        assert_eq!(parser.parse_stmt(), d_stmt);
         assert_eq!(
             parser.ast.stmts[1].span,
             Span {
@@ -204,24 +172,16 @@ mod tests {
                 end: 23
             }
         );
-        // `float d;`
-        assert_eq!(
-            parser.ast.decls[1].value,
-            Decl::Variable {
-                typ: Type::Float,
-                name: "d".into(),
-                init: None
-            }
-        );
+        ast.assert_matches(&parser.ast);
     }
 
     #[test]
     fn parse_return_without_a_value() {
         let tokens = lex("return;");
         let mut parser = Parser::new(&tokens);
+        let ast = AstBuilder::default();
 
-        assert_eq!(parser.parse_stmt(), StmtId(0));
-        assert_eq!(parser.ast.stmts[0].value, Stmt::Return(None));
+        assert_eq!(parser.parse_stmt(), ast.stmt_return(None));
         assert_eq!(
             parser.ast.stmts[0].span,
             Span {
@@ -230,5 +190,6 @@ mod tests {
                 end: 7,
             }
         );
+        ast.assert_matches(&parser.ast);
     }
 }

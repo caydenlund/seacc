@@ -28,7 +28,7 @@ impl Parser<'_> {
             match self.peek().map(|t| &t.value) {
                 Some(TokenKind::Punct(Punct::Semicolon)) => {
                     let end = self.next().unwrap().span;
-                    return Some(self.push_decl(
+                    return Some(self.ast.push_decl(
                         Decl::Variable {
                             typ,
                             name,
@@ -49,7 +49,10 @@ impl Parser<'_> {
                         panic!("expected Semicolon, found {next:?}")
                     };
                     let end = *end;
-                    return Some(self.push_decl(Decl::Variable { typ, name, init }, start + end));
+                    return Some(
+                        self.ast
+                            .push_decl(Decl::Variable { typ, name, init }, start + end),
+                    );
                 }
                 Some(TokenKind::Punct(Punct::Lparen)) => {
                     self.pos = self
@@ -70,7 +73,10 @@ impl Parser<'_> {
                         panic!("expected Semicolon after function declaration")
                     };
                     let end = *end;
-                    return Some(self.push_decl(Decl::Function(decl), function_span + end));
+                    return Some(
+                        self.ast
+                            .push_decl(Decl::Function(decl), function_span + end),
+                    );
                 }
                 t => panic!("unexpected token in decl: {t:?}"),
             }
@@ -144,51 +150,28 @@ impl Parser<'_> {
             span: start + *end,
         })
     }
-
-    fn push_decl(&mut self, decl: Decl, span: Span) -> DeclId {
-        self.ast.decls.push(Spanned { value: decl, span });
-        #[allow(clippy::cast_possible_truncation)]
-        DeclId((self.ast.decls.len() - 1) as u32)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        lex::token::Token,
-        parse::ast::{Expr, ExprId, Type},
-    };
-
-    fn lex(input: &str) -> Vec<Token> {
-        crate::lex::lex(7, &(String::from(input) + "\n")).0.unwrap()
-    }
+    use crate::lex::tests::lex;
+    use crate::parse::ast::Type;
+    use crate::parse::ast::tests::AstBuilder;
 
     #[test]
     fn single_var_decl() {
         let tokens = lex("int x; float y = 1.0; x += 1; y = 2.0;");
+        let ast = AstBuilder::default();
         let mut parser = Parser::new(&tokens);
+
         // `int x;`
-        assert_eq!(parser.try_parse_decl(), Some(DeclId(0)));
-        assert_eq!(
-            parser.ast.decls[0].value,
-            Decl::Variable {
-                typ: Type::Int,
-                name: "x".into(),
-                init: None
-            }
-        );
+        let x = ast.decl_var(Type::Int, "x", None);
+        assert_eq!(parser.try_parse_decl(), Some(x));
         // `float y = 1.0;`
-        assert_eq!(parser.try_parse_decl(), Some(DeclId(1)));
-        assert_eq!(
-            parser.ast.decls[1].value,
-            Decl::Variable {
-                typ: Type::Float,
-                name: "y".into(),
-                init: Some(ExprId(0))
-            }
-        );
-        assert_eq!(parser.ast.exprs[0].value, Expr::Decimal(1.0));
+        let y_init = ast.expr_float(1.0);
+        let y = ast.decl_var(Type::Float, "y", Some(y_init));
+        assert_eq!(parser.try_parse_decl(), Some(y));
         // `x`
         assert_eq!(parser.try_parse_decl(), None);
         // (parser shouldn't have advanced)
@@ -196,5 +179,6 @@ mod tests {
             parser.peek().map(|t| &t.value),
             Some(&TokenKind::Ident("x".into()))
         );
+        ast.assert_matches(&parser.ast);
     }
 }

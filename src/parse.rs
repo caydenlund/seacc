@@ -12,27 +12,30 @@ pub fn parse(tokens: &[Token]) -> ParsedOutput {
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::ast::{Decl, DeclId, Expr, ExprId, Item, Stmt, Type};
+    use super::parse;
+    use crate::lex::tests::lex;
+    use crate::parse::ast::tests::AstBuilder;
+    use crate::parse::ast::{FunctionDecl, Type};
 
     #[test]
     fn parses_multiple_top_level_items() {
-        let tokens = crate::lex::lex(3, "float scale; int main() { return 42; }\n")
-            .0
-            .expect("should tokenize");
-        let output = super::parse(&tokens);
+        let tokens = lex("float scale; int main() { return 42; }");
+        let ast = parse(&tokens).ast;
+        let ab = AstBuilder::default();
 
-        assert_eq!(output.ast.items.len(), 2);
-        assert_eq!(output.ast.items[0].value, Item::Decl(DeclId(0)));
-        assert_eq!(
-            output.ast.decls[0].value,
-            Decl::Variable {
-                typ: Type::Float,
-                name: "scale".into(),
-                init: None,
-            }
+        let scale = ab.decl_var(Type::Float, "scale", None);
+        ab.item_decl(scale);
+        let value = ab.expr_int(42);
+        let ret = ab.stmt_return(Some(value));
+        ab.item_func(
+            FunctionDecl {
+                ret_typ: Type::Int,
+                name: "main".into(),
+                params: vec![],
+                variadic: false,
+            },
+            &[ret],
         );
-        assert!(matches!(output.ast.items[1].value, Item::FuncDef { .. }));
-        assert_eq!(output.ast.stmts[0].value, Stmt::Return(Some(ExprId(0))));
-        assert_eq!(output.ast.exprs[0].value, Expr::Integer(42));
+        ab.assert_matches(&ast);
     }
 }

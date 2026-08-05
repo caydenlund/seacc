@@ -1,4 +1,4 @@
-use crate::Spanned;
+use crate::{Span, Spanned};
 
 mod decl;
 pub use decl::{Decl, EnumVariant, Field, FunctionDecl, Param};
@@ -13,16 +13,16 @@ mod stmt;
 pub use stmt::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DeclId(pub u32);
+pub struct DeclId(pub(self) u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExprId(pub u32);
+pub struct ExprId(pub(self) u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ItemId(pub u32);
+pub struct ItemId(pub(self) u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StmtId(pub u32);
+pub struct StmtId(pub(self) u32);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -42,22 +42,98 @@ pub struct Ast {
 
 impl Ast {
     #[must_use]
-    pub fn decl(&self, id: DeclId) -> &Spanned<Decl> {
-        &self.decls[id.0 as usize]
+    pub fn decl(&self, id: DeclId) -> &Decl {
+        &self.decls[id.0 as usize].value
     }
 
     #[must_use]
-    pub fn expr(&self, id: ExprId) -> &Spanned<Expr> {
-        &self.exprs[id.0 as usize]
+    pub fn decl_span(&self, id: DeclId) -> Span {
+        self.decls[id.0 as usize].span
+    }
+
+    pub(crate) fn push_decl(&mut self, decl: Decl, span: Span) -> DeclId {
+        self.decls.push(Spanned { value: decl, span });
+        DeclId((self.decls.len() - 1) as u32)
     }
 
     #[must_use]
-    pub fn item(&self, id: ItemId) -> &Spanned<Item> {
-        &self.items[id.0 as usize]
+    pub fn expr(&self, id: ExprId) -> &Expr {
+        &self.exprs[id.0 as usize].value
     }
 
     #[must_use]
-    pub fn stmt(&self, id: StmtId) -> &Spanned<Stmt> {
-        &self.stmts[id.0 as usize]
+    pub fn expr_span(&self, id: ExprId) -> Span {
+        self.exprs[id.0 as usize].span
+    }
+
+    pub(crate) fn push_expr(&mut self, expr: Expr, span: Span) -> ExprId {
+        self.exprs.push(Spanned { value: expr, span });
+        ExprId((self.exprs.len() - 1) as u32)
+    }
+
+    #[must_use]
+    pub fn item(&self, id: ItemId) -> &Item {
+        &self.items[id.0 as usize].value
+    }
+
+    #[must_use]
+    pub fn item_span(&self, id: ItemId) -> Span {
+        self.items[id.0 as usize].span
+    }
+
+    pub(crate) fn push_item(&mut self, item: Item, span: Span) -> ItemId {
+        self.items.push(Spanned { value: item, span });
+        ItemId((self.items.len() - 1) as u32)
+    }
+
+    #[must_use]
+    pub fn stmt(&self, id: StmtId) -> &Stmt {
+        &self.stmts[id.0 as usize].value
+    }
+
+    #[must_use]
+    pub fn stmt_span(&self, id: StmtId) -> Span {
+        self.stmts[id.0 as usize].span
+    }
+
+    pub(crate) fn push_stmt(&mut self, stmt: Stmt, span: Span) -> StmtId {
+        self.stmts.push(Spanned { value: stmt, span });
+        StmtId((self.stmts.len() - 1) as u32)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    #[derive(Default, Clone)]
+    pub struct AstBuilder {
+        pub decls: RefCell<Vec<Decl>>,
+        pub exprs: RefCell<Vec<Expr>>,
+        pub items: RefCell<Vec<Item>>,
+        pub stmts: RefCell<Vec<Stmt>>,
+    }
+
+    impl AstBuilder {
+        pub fn assert_matches(&self, ast: &Ast) {
+            assert_eq!(
+                ast.decls.iter().map(|decl| &decl.value).collect::<Vec<_>>(),
+                self.decls.borrow().iter().collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                ast.exprs.iter().map(|expr| &expr.value).collect::<Vec<_>>(),
+                self.exprs.borrow().iter().collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                ast.items.iter().map(|item| &item.value).collect::<Vec<_>>(),
+                self.items.borrow().iter().collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                ast.stmts.iter().map(|stmt| &stmt.value).collect::<Vec<_>>(),
+                self.stmts.borrow().iter().collect::<Vec<_>>(),
+            );
+        }
     }
 }
