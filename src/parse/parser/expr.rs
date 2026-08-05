@@ -165,6 +165,7 @@ impl Parser<'_> {
 
         match self.peek().value {
             TokenKind::Punct(Punct::Lsquare) => {
+                // `[]`: Array subscripting
                 let start = self.next().span;
                 let ind = self.parse_expr_bp(0);
                 let Token {
@@ -177,6 +178,39 @@ impl Parser<'_> {
                     "expr: expected Rsquare but found {tok:?}"
                 );
                 Some(self.push_expr(Expr::GetIndex { obj: lhs, ind }, start + end))
+            }
+            TokenKind::Punct(Punct::Lparen) => {
+                // `()`: Function call
+                let start = self.next().span;
+                let mut args = Vec::new();
+
+                if self.peek().value != TokenKind::Punct(Punct::Rparen) {
+                    loop {
+                        args.push(self.parse_expr_bp(0));
+                        match self.peek().value {
+                            TokenKind::Punct(Punct::Comma) => {
+                                self.next();
+                            }
+                            TokenKind::Punct(Punct::Rparen) => {
+                                break;
+                            }
+                            _ => {
+                                panic!("expected Comma or Rparen but found {:?}", self.peek().value)
+                            }
+                        }
+                    }
+                }
+
+                let Token {
+                    value: tok,
+                    span: end,
+                } = self.next();
+                let end = *end;
+                assert!(
+                    matches!(tok, &TokenKind::Punct(Punct::Rparen)),
+                    "expr: expected Rparen but found {tok:?}"
+                );
+                Some(self.push_expr(Expr::Call { callee: lhs, args }, start + end))
             }
             _ => None,
         }
@@ -341,6 +375,11 @@ mod tests {
 
         fn logic_or(&self, lhs: ExprId, rhs: ExprId) -> ExprId {
             self.binop(lhs, BinaryOp::LogicOr, rhs)
+        }
+
+        fn call(&self, callee: ExprId, args: Vec<ExprId>) -> ExprId {
+            self.exprs.borrow_mut().push(Expr::Call { callee, args });
+            self.last_id()
         }
     }
 
@@ -545,6 +584,28 @@ mod tests {
         });
         assert_parse("a /= b %= c", |eb| {
             eb.div_assign(eb.ident("a"), eb.modu_assign(eb.ident("b"), eb.ident("c")));
+        });
+    }
+
+    #[test]
+    fn call() {
+        assert_parse("foo()", |eb| {
+            eb.call(eb.ident("foo"), Vec::new());
+        });
+        assert_parse("foo(a, 1, 3.0)", |eb| {
+            eb.call(
+                eb.ident("foo"),
+                vec![eb.ident("a"), eb.int(1), eb.float(3.0)],
+            );
+        });
+        assert_parse("foo(bar())", |eb| {
+            eb.call(eb.ident("foo"), vec![eb.call(eb.ident("bar"), Vec::new())]);
+        });
+        assert_parse("foo(bar())(1)", |eb| {
+            eb.call(
+                eb.call(eb.ident("foo"), vec![eb.call(eb.ident("bar"), Vec::new())]),
+                vec![eb.int(1)],
+            );
         });
     }
 }
