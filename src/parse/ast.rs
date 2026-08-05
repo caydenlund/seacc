@@ -13,16 +13,16 @@ mod stmt;
 pub use stmt::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DeclId(u32);
+pub struct DeclId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExprId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ItemId(u32);
+pub struct ItemId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StmtId(u32);
+pub struct StmtId(pub u32);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {

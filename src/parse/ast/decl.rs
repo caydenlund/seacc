@@ -47,8 +47,8 @@ pub struct Field {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
-    pub name: Option<String>,
+    pub name: String,
     pub value: Option<ExprId>,
 }

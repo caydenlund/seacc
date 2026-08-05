@@ -1,12 +1,13 @@
-use super::ParseErrorKind;
 use crate::lex::token::Token;
-use crate::parse::ast::{Ast, BinaryOp, Expr, ExprId, ItemId, UnaryOp};
-use crate::{Span, Spanned};
+use crate::parse::ast::Ast;
 
+mod decl;
 mod expr;
+mod stmt;
+mod typ;
 
 pub struct ParsedOutput {
-    ast: Ast,
+    pub ast: Ast,
 }
 
 pub(super) struct Parser<'a> {
@@ -25,7 +26,9 @@ impl<'a> Parser<'a> {
     }
 
     pub(super) fn parse(mut self) -> ParsedOutput {
-        todo!();
+        while self.pos < self.tokens.len() {
+            // self.parse_item();
+        }
 
         ParsedOutput { ast: self.ast }
     }

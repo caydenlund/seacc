@@ -1,6 +1,6 @@
 use super::{DeclId, ExprId, StmtId};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
     Decl(DeclId),
     Expr(ExprId),
