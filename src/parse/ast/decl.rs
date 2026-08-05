@@ -29,10 +29,10 @@ pub enum Decl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
-    ret_typ: Type,
-    name: String,
-    params: Vec<Param>,
-    variadic: bool,
+    pub ret_typ: Type,
+    pub name: String,
+    pub params: Vec<Param>,
+    pub variadic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

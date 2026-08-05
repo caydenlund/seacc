@@ -3,6 +3,7 @@ use crate::parse::ast::Ast;
 
 mod decl;
 mod expr;
+mod item;
 mod stmt;
 mod typ;
 
@@ -27,7 +28,7 @@ impl<'a> Parser<'a> {
 
     pub(super) fn parse(mut self) -> ParsedOutput {
         while self.pos < self.tokens.len() {
-            // self.parse_item();
+            self.parse_item();
         }
 
         ParsedOutput { ast: self.ast }
