@@ -1,5 +1,5 @@
 use crate::{
-    Span, Spanned,
+    Span,
     lex::token::{Punct, Token, TokenKind},
     parse::ast::{BinaryOp, Expr, ExprId, UnaryOp},
 };

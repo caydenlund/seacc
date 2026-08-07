@@ -94,13 +94,16 @@ fn function_children(def: &FunctionDecl) -> Vec<Tree> {
 
 fn decl_tree(ast: &Ast, id: DeclId) -> Tree {
     match &ast.decl(id) {
-        Decl::Variable { typ, name, init } => {
-            let mut children = vec![type_tree(typ), Tree::leaf(format!("Name: {name}"))];
-            if let Some(init) = init {
-                children.push(labeled_expr(ast, "Value", *init));
-            }
-            Tree::branch("Decl: Var", children)
-        }
+        Decl::Variables { typ, vars } => Tree::branch(
+            "Decl: Variables",
+            std::iter::once(type_tree(typ)).chain(vars.iter().map(|(name, init)| {
+                let mut children = vec![Tree::leaf(format!("Name: {name}"))];
+                if let Some(init) = init {
+                    children.push(labeled_expr(ast, "Value", *init));
+                }
+                Tree::branch("Variable", children)
+            })),
+        ),
         Decl::Function(def) => Tree::branch("Decl: Func", function_children(def)),
         Decl::Typedef { typ, name } => Tree::branch(
             "Decl: Typedef",

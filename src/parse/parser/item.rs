@@ -68,11 +68,11 @@ mod tests {
         let tokens = lex("int a; float b = 1.0; int foo(); float bar(int x, int, int);");
         let mut parser = Parser::new(&tokens);
         let ast = AstBuilder::default();
-        let a = ast.decl_var(Type::Int, "a", None);
+        let a = ast.decl_vars(Type::Int, &[("a", None)]);
         let a_item = ast.item_decl(a);
         assert_eq!(parser.parse_item(), a_item);
         let b_init = ast.expr_float(1.0);
-        let b = ast.decl_var(Type::Float, "b", Some(b_init));
+        let b = ast.decl_vars(Type::Float, &[("b", Some(b_init))]);
         let b_item = ast.item_decl(b);
         assert_eq!(parser.parse_item(), b_item);
         let foo = ast.decl_fn(FunctionDecl {
@@ -113,9 +113,9 @@ mod tests {
         let mut parser = Parser::new(&tokens);
         let ast = AstBuilder::default();
         let two = ast.expr_int(2);
-        let a = ast.decl_var(Type::Int, "a", Some(two));
+        let a = ast.decl_vars(Type::Int, &[("a", Some(two))]);
         let a_stmt = ast.stmt_decl(a);
-        let b = ast.decl_var(Type::Int, "b", None);
+        let b = ast.decl_vars(Type::Int, &[("b", None)]);
         let b_stmt = ast.stmt_decl(b);
         let assign = ast.expr_set(
             ast.expr_ident("b"),

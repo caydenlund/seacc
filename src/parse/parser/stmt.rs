@@ -1,7 +1,7 @@
 use super::Parser;
+use crate::Spanned;
 use crate::lex::token::{Keyword, Punct, TokenKind};
 use crate::parse::ast::{Stmt, StmtId};
-use crate::{Span, Spanned};
 
 impl Parser<'_> {
     pub(super) fn parse_stmt(&mut self) -> StmtId {
@@ -109,6 +109,7 @@ impl Parser<'_> {
 mod tests {
     use crate::parse::ast::tests::AstBuilder;
     use crate::{
+        Span,
         lex::token::Token,
         parse::ast::{BinaryOp, Type},
     };
@@ -149,7 +150,7 @@ mod tests {
         let ast = AstBuilder::default();
         // `int a = b * c;`
         let init = ast.expr_mul(ast.expr_ident("b"), ast.expr_ident("c"));
-        let a = ast.decl_var(Type::Int, "a", Some(init));
+        let a = ast.decl_vars(Type::Int, &[("a", Some(init))]);
         let a_stmt = ast.stmt_decl(a);
         assert_eq!(parser.parse_stmt(), a_stmt);
         assert_eq!(
@@ -161,7 +162,7 @@ mod tests {
             }
         );
         // `float d;`
-        let d = ast.decl_var(Type::Float, "d", None);
+        let d = ast.decl_vars(Type::Float, &[("d", None)]);
         let d_stmt = ast.stmt_decl(d);
         assert_eq!(parser.parse_stmt(), d_stmt);
         assert_eq!(

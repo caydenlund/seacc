@@ -53,6 +53,7 @@ impl Ast {
 
     pub(crate) fn push_decl(&mut self, decl: Decl, span: Span) -> DeclId {
         self.decls.push(Spanned { value: decl, span });
+        #[allow(clippy::cast_possible_truncation)]
         DeclId((self.decls.len() - 1) as u32)
     }
 
@@ -68,6 +69,7 @@ impl Ast {
 
     pub(crate) fn push_expr(&mut self, expr: Expr, span: Span) -> ExprId {
         self.exprs.push(Spanned { value: expr, span });
+        #[allow(clippy::cast_possible_truncation)]
         ExprId((self.exprs.len() - 1) as u32)
     }
 
@@ -83,6 +85,7 @@ impl Ast {
 
     pub(crate) fn push_item(&mut self, item: Item, span: Span) -> ItemId {
         self.items.push(Spanned { value: item, span });
+        #[allow(clippy::cast_possible_truncation)]
         ItemId((self.items.len() - 1) as u32)
     }
 
@@ -98,6 +101,7 @@ impl Ast {
 
     pub(crate) fn push_stmt(&mut self, stmt: Stmt, span: Span) -> StmtId {
         self.stmts.push(Spanned { value: stmt, span });
+        #[allow(clippy::cast_possible_truncation)]
         StmtId((self.stmts.len() - 1) as u32)
     }
 }

@@ -2,10 +2,9 @@ use super::{ExprId, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
-    Variable {
+    Variables {
         typ: Type,
-        name: String,
-        init: Option<ExprId>,
+        vars: Vec<(String, Option<ExprId>)>,
     },
     Function(FunctionDecl),
     Typedef {
@@ -69,11 +68,14 @@ mod tests {
             self.push_decl(Decl::Function(func))
         }
 
-        pub fn decl_var(&self, typ: Type, name: impl Into<String>, init: Option<ExprId>) -> DeclId {
-            self.push_decl(Decl::Variable {
+        pub fn decl_vars<S: Into<String> + Clone>(
+            &self,
+            typ: Type,
+            vars: &[(S, Option<ExprId>)],
+        ) -> DeclId {
+            self.push_decl(Decl::Variables {
                 typ,
-                name: name.into(),
-                init,
+                vars: vars.iter().cloned().map(|(s, e)| (s.into(), e)).collect(),
             })
         }
 

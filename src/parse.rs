@@ -23,7 +23,7 @@ mod tests {
         let ast = parse(&tokens).ast;
         let ab = AstBuilder::default();
 
-        let scale = ab.decl_var(Type::Float, "scale", None);
+        let scale = ab.decl_vars(Type::Float, &[("scale", None)]);
         ab.item_decl(scale);
         let value = ab.expr_int(42);
         let ret = ab.stmt_return(Some(value));
