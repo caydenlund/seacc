@@ -10,5 +10,7 @@
 pub mod lex;
 pub mod parse;
 
+mod intern;
+pub use intern::{StringIntern, StringRef};
 mod span;
 pub use span::{FileId, LineMap, Span, Spanned};

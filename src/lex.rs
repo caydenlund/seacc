@@ -24,10 +24,14 @@ pub fn lex(file: FileId, input: &str) -> (Result<Vec<Token>, Vec<LexError>>, Lin
 pub mod tests {
     use super::*;
 
-    // lexes the given string (with an added newline), panicking on error
+    /// Lexes the given string (with an added newline), panicking on error
+    ///
+    /// # Panics
+    /// On error
+    #[must_use]
     pub fn lex(input: &str) -> Vec<Token> {
         super::lex(7, &(String::from(input) + "\n"))
             .0
-            .expect("unable to lex input '{input:?}'")
+            .unwrap_or_else(|e| panic!("unable to lex input '{input:?}': {e:?}"))
     }
 }
