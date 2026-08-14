@@ -11,4 +11,5 @@ pub enum Keyword {
     Break,
     Switch,
     Case,
+    Sizeof,
 }

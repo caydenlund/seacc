@@ -106,6 +106,7 @@ impl<'a> Lexer<'a> {
 
         let start = self.pos - 1;
         match first {
+            // (comments)
             b'/' if self.next_eq(b'/') => {
                 while self.pos < self.input.len() && self.input.as_bytes()[self.pos] != b'\n' {
                     self.pos += 1;
@@ -117,14 +118,12 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                     if self.input.as_bytes()[self.pos] == b'\n' {
-                        self.pos += 1;
-                        self.lines.push(self.pos);
-                    } else {
-                        self.pos += 1;
+                        self.lines.push(self.pos + 1);
                     }
+                    self.pos += 1;
                 }
             }
-            //
+            // `(` `)` `[` `]` `{` `}` `,` `;` `.` `->`
             b'(' => self.push_token(Punct(Lparen), start),
             b')' => self.push_token(Punct(Rparen), start),
             b'[' => self.push_token(Punct(Lsquare), start),
@@ -134,18 +133,31 @@ impl<'a> Lexer<'a> {
             b',' => self.push_token(Punct(Comma), start),
             b';' => self.push_token(Punct(Semicolon), start),
             b'.' => self.push_token(Punct(Dot), start),
-            //
+            b'-' if self.next_eq(b'>') => self.push_token(Punct(Arrow), start),
+            // `*=` `*` `/=` `/` `%=` `%` `++` `+=` `+` `--` `-=` `-`
             b'*' if self.next_eq(b'=') => self.push_token(Punct(StarEq), start),
             b'*' => self.push_token(Punct(Star), start),
             b'/' if self.next_eq(b'=') => self.push_token(Punct(SlashEq), start),
             b'/' => self.push_token(Punct(Slash), start),
             b'%' if self.next_eq(b'=') => self.push_token(Punct(PercentEq), start),
             b'%' => self.push_token(Punct(Percent), start),
+            b'+' if self.next_eq(b'+') => self.push_token(Punct(PlusPlus), start),
             b'+' if self.next_eq(b'=') => self.push_token(Punct(PlusEq), start),
             b'+' => self.push_token(Punct(Plus), start),
+            b'-' if self.next_eq(b'-') => self.push_token(Punct(MinusMinus), start),
             b'-' if self.next_eq(b'=') => self.push_token(Punct(MinusEq), start),
             b'-' => self.push_token(Punct(Minus), start),
-            //
+            // `~` `&&` `&=` `&` `^=` `^` `||` `|=` `|`
+            b'~' => self.push_token(Punct(Tilde), start),
+            b'&' if self.next_eq(b'&') => self.push_token(Punct(AmpAmp), start),
+            b'&' if self.next_eq(b'=') => self.push_token(Punct(AmpEq), start),
+            b'&' => self.push_token(Punct(Amp), start),
+            b'^' if self.next_eq(b'=') => self.push_token(Punct(CaretEq), start),
+            b'^' => self.push_token(Punct(Caret), start),
+            b'|' if self.next_eq(b'|') => self.push_token(Punct(PipePipe), start),
+            b'|' if self.next_eq(b'=') => self.push_token(Punct(PipeEq), start),
+            b'|' => self.push_token(Punct(Pipe), start),
+            // `<<=` `<<` `>>=` `>>`
             b'<' if self.next_eq(b'<') => {
                 if self.next_eq(b'=') {
                     self.push_token(Punct(LshiftEq), start);
@@ -160,7 +172,7 @@ impl<'a> Lexer<'a> {
                     self.push_token(Punct(Rshift), start);
                 }
             }
-            //
+            // `==` `=` `!=` `!` `>=` `>` `<=` `<`
             b'=' if self.next_eq(b'=') => self.push_token(Punct(EqEq), start),
             b'=' => self.push_token(Punct(Eq), start),
             b'!' if self.next_eq(b'=') => self.push_token(Punct(BangEq), start),
@@ -169,9 +181,6 @@ impl<'a> Lexer<'a> {
             b'>' => self.push_token(Punct(Gt), start),
             b'<' if self.next_eq(b'=') => self.push_token(Punct(LtEq), start),
             b'<' => self.push_token(Punct(Lt), start),
-            //
-            b'&' if self.next_eq(b'&') => self.push_token(Punct(And), start),
-            b'|' if self.next_eq(b'|') => self.push_token(Punct(Or), start),
             //
             _ => unreachable!(),
         }
@@ -201,6 +210,7 @@ impl<'a> Lexer<'a> {
             "break" => self.push_token(Keyword(Break), start),
             "switch" => self.push_token(Keyword(Switch), start),
             "case" => self.push_token(Keyword(Case), start),
+            "sizeof" => self.push_token(Keyword(Sizeof), start),
             _ => self.push_token(Ident(contents), start),
         }
     }
@@ -290,38 +300,28 @@ impl<'a> Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn lex_input(input: &str) -> Lexer<'_> {
-        let mut lexer = Lexer::new(7, input);
-        lexer.lex();
-        lexer
-    }
+    use crate::lex::tests::lex;
 
     fn assert_values(input: &str, expected: &[TokenKind]) {
-        let lexer = lex_input(input);
+        let tokens = lex(input);
         assert_eq!(
-            lexer
-                .tokens
-                .iter()
-                .map(|token| &token.value)
-                .collect::<Vec<_>>(),
+            tokens.iter().map(|token| &token.value).collect::<Vec<_>>(),
             expected.iter().collect::<Vec<_>>(),
             "input: {input:?}"
         );
     }
 
     fn assert_spans(input: &str, expected: &[(usize, usize)]) {
-        let lexer = lex_input(input);
+        let tokens = lex(input);
         assert_eq!(
-            lexer
-                .tokens
+            tokens
                 .iter()
                 .map(|token| (token.span.start, token.span.end))
                 .collect::<Vec<_>>(),
             expected,
             "input: {input:?}"
         );
-        assert!(lexer.tokens.iter().all(|token| token.span.file == 7));
+        assert!(tokens.iter().all(|token| token.span.file == 7));
     }
 
     #[test]
@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn all_single_character_punctuation_is_lexed() {
+    fn single_char_punct() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn arithmetic_assignment_punctuation_is_lexed() {
+    fn arith_assignment() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -384,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn comparison_and_shift_punctuation_is_lexed() {
+    fn comparison_shift_punct() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -400,14 +400,14 @@ mod tests {
                 Punct(BangEq),
                 Punct(GtEq),
                 Punct(LtEq),
-                Punct(And),
-                Punct(Or),
+                Punct(AmpAmp),
+                Punct(PipePipe),
             ],
         );
     }
 
     #[test]
-    fn punctuation_spans_include_the_second_character() {
+    fn multi_char_punct_span() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn every_keyword_is_distinguished_from_an_identifier() {
+    fn keyword() {
         use self::Keyword::*;
         use TokenKind::Keyword;
 
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn identifiers_allow_digits_and_underscores_after_the_first_character() {
+    fn identifiers() {
         use TokenKind::Ident;
 
         assert_values(
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn identifiers_and_punctuation_have_source_spans() {
+    fn identifier_punct_span() {
         use self::Keyword::If;
         use self::Punct as P;
         use P::*;
@@ -472,18 +472,18 @@ mod tests {
     }
 
     #[test]
-    fn a_line_comment_at_end_of_input_is_discarded() {
+    fn line_comment_eof() {
         assert_values("// comment until eof", &[]);
     }
 
     #[test]
-    fn consecutive_line_comments_are_discarded() {
+    fn consecutive_line_comments() {
         assert_values("// first// second", &[]);
         assert_values("// first\n// second", &[]);
     }
 
     #[test]
-    fn whitespace_between_tokens_is_ignored() {
+    fn skip_whitespace() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -492,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn line_comment_can_be_followed_by_more_source() {
+    fn tokens_after_line_comment() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -501,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn block_comments_are_discarded() {
+    fn block_comments() {
         use self::Punct as P;
         use P::*;
         use TokenKind::Punct;
@@ -510,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn integers_are_lexed() {
+    fn integers() {
         use TokenKind::Integer;
 
         assert_values(
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn decimal_numbers_are_lexed() {
+    fn decimals() {
         use TokenKind::Decimal;
 
         assert_values(
@@ -530,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn strings_are_unescaped_and_unquoted() {
+    fn strings() {
         use TokenKind::String;
 
         assert_values(
@@ -544,14 +544,14 @@ mod tests {
     }
 
     #[test]
-    fn empty_strings_are_valid() {
+    fn empty_strings() {
         use TokenKind::String;
 
         assert_values("\"\"", &[String(std::string::String::new())]);
     }
 
     #[test]
-    fn string_spans_are_utf8_byte_offsets() {
+    fn string_spans() {
         use TokenKind::String;
 
         assert_values("\"h\u{e9}\"", &[String("h\u{e9}".into())]);
@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_string_terminator_records_an_error() {
+    fn missing_string_terminator() {
         let mut lexer = Lexer::new(7, "\"unterminated");
         lexer.lex();
 
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_string_escapes_record_an_error() {
+    fn invalid_string_escape() {
         let mut lexer = Lexer::new(7, "\"bad\\q\"\n");
         lexer.lex();
 
@@ -584,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn a_string_ending_with_an_escape_is_unterminated() {
+    fn string_ending_with_escape() {
         let mut lexer = Lexer::new(7, "\"unterminated\\");
         lexer.lex();
 
@@ -592,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn unexpected_characters_become_lexer_errors() {
+    fn unexpected_char() {
         let mut lexer = Lexer::new(7, "@");
         lexer.lex();
 
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn a_final_newline_is_required() {
+    fn req_final_newline() {
         let mut lexer = Lexer::new(7, "identifier");
         lexer.lex();
 

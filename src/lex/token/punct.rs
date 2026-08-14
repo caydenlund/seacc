@@ -9,12 +9,16 @@ pub enum Punct {
     Comma,     // `,`
     Semicolon, // `;`
     Dot,       // `.`
+    Arrow,     // `->`
 
     Star,      // `*`
     Slash,     // `/`
     Percent,   // `%`
     Plus,      // `+`
     Minus,     // `-`
+    Amp,       // `&`
+    Caret,     // `^`
+    Pipe,      // `|`
     Lshift,    // `<<`
     Rshift,    // `>>`
     Eq,        // `=`
@@ -25,14 +29,23 @@ pub enum Punct {
     MinusEq,   // `-=`
     LshiftEq,  // `<<=`
     RshiftEq,  // `>>=`
-    Bang,      // `!`
+    AmpEq,     // `&=`
+    CaretEq,   // `^=`
+    PipeEq,    // `|=`
 
-    EqEq,   // `==`
-    BangEq, // `!=`
-    Gt,     // `>`
-    GtEq,   // `>=`
-    Lt,     // `<`
-    LtEq,   // `<=`
-    And,    // `&&`
-    Or,     // `||`
+    Bang,       // `!`
+    Tilde,      // `~`
+    PlusPlus,   // `++`
+    MinusMinus, // `--`
+    Question,   // `?`
+    Colon,      // `:`
+
+    EqEq,     // `==`
+    BangEq,   // `!=`
+    Gt,       // `>`
+    GtEq,     // `>=`
+    Lt,       // `<`
+    LtEq,     // `<=`
+    AmpAmp,   // `&&`
+    PipePipe, // `||`
 }
