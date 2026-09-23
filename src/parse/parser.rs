@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars};
 
-use crate::parse::{Expr, ExprArena, ExprId, ParseResult};
+use crate::parse::ParseResult;
 
 #[derive(Debug, Clone)]
 pub(super) struct Parser<'src> {
