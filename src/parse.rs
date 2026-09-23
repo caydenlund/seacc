@@ -1,8 +1,9 @@
-mod lexer;
-use lexer::Lexer;
+mod lex;
+pub use lex::LexError;
+use lex::Lexer;
 
-mod parser;
-use parser::Parser;
+// mod parser;
+// use parser::Parser;
 
 use crate::ir::{NodeArena, NodeId};
 
@@ -17,5 +18,6 @@ pub struct ParseResult {
 /// # Errors
 /// When input is invalid
 pub fn parse(s: &str) -> Result<ParseResult, String> {
-    Parser::new(s).parse()
+    todo!();
+    // Parser::new(s).parse()
 }
