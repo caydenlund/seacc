@@ -5,9 +5,7 @@ pub type NodeArena = Arena<Node>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constant {
-    Boolean(bool),
     Number(i64),
-    Character(char),
     String(String),
 }
 
@@ -30,6 +28,15 @@ impl NodeKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
-    kind: NodeKind,
-    outputs: Vec<NodeId>,
+    pub kind: NodeKind,
+    pub outputs: Vec<NodeId>,
+}
+
+impl Node {
+    pub fn new(kind: NodeKind) -> Self {
+        Self {
+            kind,
+            outputs: Vec::new(),
+        }
+    }
 }

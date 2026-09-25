@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 /// A generational arena
@@ -158,6 +159,13 @@ impl<T> PartialEq for ArenaId<T> {
 }
 
 impl<T> Eq for ArenaId<T> {}
+
+impl<T> Hash for ArenaId<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+        self.generation.hash(state);
+    }
+}
 
 #[cfg(test)]
 mod tests {

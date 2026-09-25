@@ -1,165 +1,122 @@
-use std::{iter::Peekable, str::Chars};
+use crate::ir::{Constant, Node, NodeArena, NodeId, NodeKind};
+use crate::parse::lex::TokenKind;
+use crate::parse::{Ast, Lexer, ParseError, ParseResult};
 
-use crate::parse::ParseResult;
-
-#[derive(Debug, Clone)]
-pub(super) struct Parser<'src> {
-    input: Peekable<Chars<'src>>,
-    exprs: ExprArena,
+#[derive(Clone)]
+pub struct Parser<'s> {
+    tokens: Lexer<'s>,
+    nodes: NodeArena,
+    start: NodeId,
 }
 
 impl<'src> Parser<'src> {
-    pub(super) fn new(src: &'src str) -> Self {
+    pub fn new(src: &'src str) -> Self {
+        let mut nodes = NodeArena::new();
+        let start = nodes.insert(Node::new(NodeKind::Start));
+
         Self {
-            input: src.chars().peekable(),
-            exprs: ExprArena::new(),
+            tokens: Lexer::new(src),
+            nodes,
+            start,
         }
     }
 
-    pub(super) fn parse(mut self) -> Result<ParseResult, String> {
-        let root_expr = self.parse_expr()?;
-        self.skip_ws();
-
-        if let Some(ch) = self.input.peek() {
-            return Err(format!("unexpected input after expression: '{ch}'"));
+    pub fn parse(mut self) -> ParseResult<Ast> {
+        let expr = self.parse_expr()?;
+        if let Some(tok) = self.tokens.next()? {
+            return Err(ParseError::ExtraInput(tok));
         }
+        let ret = self.insert_node(NodeKind::Return {
+            control: self.start,
+            value: expr,
+        });
+        self.add_output(expr, ret);
 
-        Ok(ParseResult {
-            exprs: self.exprs,
-            root_expr,
+        Ok(Ast {
+            nodes: self.nodes,
+            start: self.start,
         })
     }
 
-    fn parse_expr(&mut self) -> Result<ExprId, String> {
-        self.skip_ws();
-        match self.peek() {
-            Some(&'(') => self.parse_list(),
-
-            Some(&')') => Err("unexpected ')'".to_string()),
-            Some(&'"') => self.parse_string(),
-            Some(&'#') => self.parse_hash(),
-
-            Some(ch) if ch.is_ascii_digit() => self.parse_int(),
-            Some(ch) => Err(format!("unexpected char {ch}")),
-            None => Err("unexpected end of input".to_string()),
-        }
-    }
-
-    fn parse_list(&mut self) -> Result<ExprId, String> {
-        assert_eq!(self.next(), Some('('));
-        self.skip_ws();
-
-        let mut exprs = Vec::new();
-        loop {
-            self.skip_ws();
-
-            match self.peek() {
-                Some(')') => {
-                    self.next();
-                    return Ok(self.exprs.insert(Expr::List(exprs)));
-                }
-                Some(_) => {
-                    exprs.push(self.parse_expr()?);
-                }
-                None => return Err("unterminated list".into()),
+    fn parse_expr(&mut self) -> ParseResult<NodeId> {
+        match self.tokens.peek()?.map(|tok| &tok.kind) {
+            Some(TokenKind::Number(n)) => {
+                let n = *n;
+                self.tokens.next()?;
+                Ok(self.insert_constant(Constant::Number(n)))
             }
+            None => todo!(),
+            _ => todo!(),
         }
     }
 
-    fn parse_string(&mut self) -> Result<ExprId, String> {
-        assert_eq!(self.next(), Some('"'));
-        let mut sb = String::new();
+    fn insert_constant(&mut self, value: Constant) -> NodeId {
+        let id = self.insert_node(NodeKind::Constant {
+            control: self.start,
+            value,
+        });
+        self.add_output(self.start, id);
+        id
+    }
 
-        let mut escaping = false;
-        loop {
-            if escaping {
-                match self.next() {
-                    Some('n') => sb.push('\n'),
-                    Some('t') => sb.push('\t'),
-                    Some('\\') => sb.push('\\'),
-                    Some(ch) => return Err(format!("invalid string escape sequence: '\\{ch}'")),
-                    None => return Err("unterminated string".into()),
-                }
-                escaping = false;
-            } else {
-                match self.next() {
-                    Some('\\') => escaping = true,
-                    Some('"') => return Ok(self.exprs.insert(Expr::String(sb))),
-                    Some(ch) => sb.push(ch),
-                    None => return Err("unterminated string".into()),
+    fn add_output(&mut self, sup: NodeId, sub: NodeId) {
+        self.nodes.get_mut(sup).unwrap().outputs.push(sub);
+    }
+
+    fn insert_node(&mut self, kind: NodeKind) -> NodeId {
+        self.nodes.insert(Node::new(kind))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use crate::parse::Token;
+
+    use super::*;
+
+    fn walk_ast(input: &str) -> ParseResult<Vec<NodeKind>> {
+        let ast = crate::parse::parse(input)?;
+        let mut walk = vec![ast.start];
+        let mut seen = HashSet::from([ast.start]);
+        let mut idx = 0;
+        while idx < walk.len() {
+            for &output in &ast.nodes.get(walk[idx]).unwrap().outputs {
+                if seen.insert(output) {
+                    walk.push(output);
                 }
             }
+            idx += 1;
         }
+
+        Ok(walk
+            .into_iter()
+            .map(|id| ast.nodes.get(id).unwrap().kind.clone())
+            .collect())
     }
 
-    fn parse_hash(&mut self) -> Result<ExprId, String> {
-        assert_eq!(self.next(), Some('#'));
-        if self.next_if_eq('f') {
-            Ok(self.exprs.insert(Expr::Bool(false)))
-        } else if self.next_if_eq('t') {
-            Ok(self.exprs.insert(Expr::Bool(true)))
-        } else if self.next_if_eq('\\') {
-            if self.next_if_eq('s') {
-                if self.next_if_eq('p') {
-                    if self.next_if_eq('a') && self.next_if_eq('c') && self.next_if_eq('e') {
-                        Ok(self.exprs.insert(Expr::Char(' ')))
-                    } else {
-                        Err("invalid '#space' sequence".into())
-                    }
-                } else if self.next_if(|ch| ch.is_whitespace()).is_some() {
-                    Ok(self.exprs.insert(Expr::Char('s')))
-                } else {
-                    Err("invalid '#space' sequence".into())
+    #[test]
+    fn parse_int() {
+        assert!(matches!(
+            walk_ast("  123 ").as_deref(),
+            Ok([
+                NodeKind::Start,
+                NodeKind::Constant {
+                    control: _,
+                    value: Constant::Number(123)
+                },
+                NodeKind::Return {
+                    control: _,
+                    value: _
                 }
-            } else if let Some(ch) = self.next() {
-                Ok(self.exprs.insert(Expr::Char(ch)))
-            } else {
-                Err("unterminated char hash".into())
-            }
-        } else if let Some(ch) = self.next() {
-            Err(format!("invalid char after hash: '{ch}'"))
-        } else {
-            Err("unterminated hash".into())
-        }
-    }
-
-    fn parse_int(&mut self) -> Result<ExprId, String> {
-        let mut s = String::new();
-        while let Some(ch) = self.next_if(char::is_ascii_digit) {
-            s.push(ch);
-        }
-        let Ok(n) = s.parse::<i64>() else {
-            return Err(format!("unable to parse integer from {s}"));
-        };
-        Ok(self.exprs.insert(Expr::Integer(n)))
-    }
-
-    fn skip_ws(&mut self) {
-        while self.next_if(|ch| ch.is_whitespace()).is_some() {}
-    }
-
-    fn next_if_eq(&mut self, ch: char) -> bool {
-        if self.peek() == Some(&ch) {
-            self.next();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn next_if(&mut self, f: impl Fn(&char) -> bool) -> Option<char> {
-        if self.peek().is_some_and(f) {
-            self.next()
-        } else {
-            None
-        }
-    }
-
-    fn next(&mut self) -> Option<char> {
-        self.input.next()
-    }
-
-    fn peek(&mut self) -> Option<&char> {
-        self.input.peek()
+            ])
+        ));
+        assert!(matches!(
+            walk_ast("1 2"),
+            Err(ParseError::ExtraInput(Token {
+                kind: TokenKind::Number(2)
+            }))
+        ));
     }
 }
