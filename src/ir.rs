@@ -5,15 +5,16 @@ use crate::util::arena::{Arena, ArenaId};
 mod node;
 pub use node::*;
 
+#[macro_export]
 macro_rules! node {
     (Return($control:expr)) => {
-        $crate::ir::node::NodeSpec::<()>::return_($control, None)
+        $crate::ir::NodeSpec::<()>::return_($control, None)
     };
     (Return($control:expr, $value:expr)) => {
-        $crate::ir::node::NodeSpec::<()>::return_($control, Some($value))
+        $crate::ir::NodeSpec::<()>::return_($control, Some($value))
     };
     (Constant($value:expr)) => {
-        $crate::ir::node::NodeSpec::<()>::constant($value)
+        $crate::ir::NodeSpec::<()>::constant($value)
     };
 }
 
@@ -76,6 +77,10 @@ impl Graph {
         Self::default()
     }
 
+    /// Adds the given node specification to the graph
+    ///
+    /// # Panics
+    /// Never
     #[must_use]
     #[allow(private_bounds)]
     pub fn add<K: NodeType>(&mut self, spec: NodeSpec<K>) -> NodeId<K> {
@@ -100,6 +105,11 @@ impl Graph {
     #[allow(private_bounds)]
     pub fn get_mut<K: NodeType>(&mut self, id: NodeId<K>) -> Option<&mut Node> {
         self.nodes.get_mut(id.id)
+    }
+
+    #[must_use]
+    pub const fn start(&self) -> ControlId {
+        self.start
     }
 }
 

@@ -67,28 +67,11 @@ impl<'s> Lexer<'s> {
         Ok(Some(Token { kind }))
     }
 
-    pub fn next_if<F: Fn(&TokenKind) -> bool>(&mut self, f: F) -> LexResult<Option<Token>> {
-        if let Some(next) = self.next()? {
-            if f(&next.kind) {
-                Ok(Some(next))
-            } else {
-                self.next = Some(next);
-                Ok(None)
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn next_if_eq(&mut self, kind: &TokenKind) -> LexResult<Option<Token>> {
-        self.next_if(|next| next == kind)
-    }
-
-    pub fn peek(&mut self) -> LexResult<Option<&Token>> {
+    pub fn peek(&mut self) -> LexResult<Option<&TokenKind>> {
         if self.next.is_none() {
             self.next = self.next()?;
         }
-        Ok(self.next.as_ref())
+        Ok(self.next.as_ref().map(|tok| &tok.kind))
     }
 
     fn lex_string(&mut self) -> LexResult<TokenKind> {
