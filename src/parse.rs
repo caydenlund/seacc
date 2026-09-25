@@ -5,13 +5,7 @@ pub use lex::{LexError, Token};
 mod parser;
 use parser::Parser;
 
-use crate::ir::{NodeArena, NodeId};
-
-#[derive(Debug, Clone)]
-pub struct Ast {
-    pub nodes: NodeArena,
-    pub start: NodeId,
-}
+use crate::ir::Graph;
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
@@ -31,6 +25,6 @@ pub type ParseResult<T> = Result<T, ParseError>;
 ///
 /// # Errors
 /// When input is invalid
-pub fn parse(s: &str) -> ParseResult<Ast> {
+pub fn parse(s: &str) -> ParseResult<Graph> {
     Parser::new(s).parse()
 }
