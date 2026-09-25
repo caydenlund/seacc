@@ -16,6 +16,24 @@ macro_rules! node {
     (Constant($value:expr)) => {
         $crate::ir::NodeSpec::<()>::constant($value)
     };
+    (Mul($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::multiply($lhs, $rhs)
+    };
+    (Div($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::divide($lhs, $rhs)
+    };
+    (Mod($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::modulo($lhs, $rhs)
+    };
+    (Rem($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::remainder($lhs, $rhs)
+    };
+    (Add($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::add($lhs, $rhs)
+    };
+    (Sub($lhs:expr, $rhs:expr)) => {
+        $crate::ir::NodeSpec::<()>::subtract($lhs, $rhs)
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -127,6 +145,53 @@ mod tests {
         }
     }
 
+    fn serialize_from(graph: &Graph, node: ArenaId<Node>) -> String {
+        let node = graph.nodes.get(node).expect("missing node");
+        match &node.kind {
+            Start => "Start".into(),
+            Return => match node.inputs.len() {
+                1 => format!("Return(ctrl={})", serialize_from(graph, node.inputs[0])),
+                2 => format!(
+                    "Return(ctrl={}, val={})",
+                    serialize_from(graph, node.inputs[0]),
+                    serialize_from(graph, node.inputs[1])
+                ),
+                _ => panic!("invalid number of return inputs"),
+            },
+            Constant(node::Constant::Number(n)) => format!("#{n}"),
+            Mul => format!(
+                "({} * {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+            Div => format!(
+                "({} / {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+            Mod => format!(
+                "({} mod {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+            Rem => format!(
+                "({} rem {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+            Add => format!(
+                "({} + {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+            Sub => format!(
+                "({} - {})",
+                serialize_from(graph, node.inputs[0]),
+                serialize_from(graph, node.inputs[1])
+            ),
+        }
+    }
+
     #[test]
     fn ret() {
         let mut graph = Graph::new();
@@ -151,12 +216,36 @@ mod tests {
 
         let ret = graph.add(node![Return(start, constant)]);
         assert_eq!(
+            serialize_from(&graph, ret.id),
+            "Return(ctrl=Start, val=#123)"
+        );
+        assert_eq!(
             graph.get(constant),
             Some(&node(Constant(Number(123)), &[], &[ret.id]))
         );
         assert_eq!(
             graph.get(ret),
             Some(&node(Return, &[start.id, constant.id], &[]))
+        );
+    }
+
+    #[test]
+    fn arith() {
+        let mut graph = Graph::new();
+        let start = graph.start;
+
+        let mut lhs = graph.add(node![Constant(Number(2))]);
+        let mut rhs = graph.add(node![Constant(Number(3))]);
+        lhs = graph.add(node![Mul(lhs, rhs)]);
+        rhs = graph.add(node![Constant(Number(4))]);
+        rhs = graph.add(node![Div(lhs, rhs)]);
+        lhs = graph.add(node![Constant(Number(1))]);
+        rhs = graph.add(node![Add(lhs, rhs)]);
+
+        let ret = graph.add(node![Return(start, rhs)]);
+        assert_eq!(
+            serialize_from(&graph, ret.id),
+            "Return(ctrl=Start, val=(#1 + ((#2 * #3) / #4)))"
         );
     }
 }

@@ -11,6 +11,8 @@ use crate::ir::Graph;
 pub enum ParseError {
     LexError(LexError),
     ExtraInput(Token),
+    UnclosedList,
+    WrongArity(String, usize),
 }
 
 impl From<LexError> for ParseError {

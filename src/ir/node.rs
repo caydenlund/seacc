@@ -6,7 +6,6 @@ use crate::util::arena::ArenaId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constant {
     Number(i64),
-    String(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +14,12 @@ pub enum NodeKind {
     Return,
 
     Constant(Constant),
+    Mul,
+    Div,
+    Mod,
+    Rem,
+    Add,
+    Sub,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +52,60 @@ impl<K> NodeSpec<K> {
         NodeSpec {
             kind: NodeKind::Constant(value),
             inputs: Vec::new(),
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn multiply(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Mul,
+            inputs: vec![lhs.id, rhs.id],
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn divide(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Div,
+            inputs: vec![lhs.id, rhs.id],
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn modulo(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Mod,
+            inputs: vec![lhs.id, rhs.id],
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn remainder(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Rem,
+            inputs: vec![lhs.id, rhs.id],
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn add(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Add,
+            inputs: vec![lhs.id, rhs.id],
+            _type: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub fn subtract(lhs: ValueId, rhs: ValueId) -> NodeSpec<Value> {
+        NodeSpec {
+            kind: NodeKind::Sub,
+            inputs: vec![lhs.id, rhs.id],
             _type: PhantomData,
         }
     }
