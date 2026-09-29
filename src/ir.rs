@@ -20,7 +20,7 @@ pub enum NodeKind {
 
 #[derive(Debug, Clone)]
 pub enum NodeSpec {
-    Return(NodeId),
+    Return(NodeId, NodeId),
 
     Constant(Constant),
     Mul(NodeId, NodeId),
@@ -71,7 +71,7 @@ impl Graph {
     #[must_use]
     pub fn add(&mut self, spec: NodeSpec) -> NodeId {
         match spec {
-            NodeSpec::Return(val) => self.add_node(NodeKind::Return, &[val]),
+            NodeSpec::Return(ctrl, val) => self.add_node(NodeKind::Return, &[ctrl, val]),
             NodeSpec::Constant(constant) => self.add_node(NodeKind::Constant(constant), &[]),
             NodeSpec::Mul(lhs, rhs) => self.add_node(NodeKind::Mul, &[lhs, rhs]),
             NodeSpec::Div(lhs, rhs) => self.add_node(NodeKind::Div, &[lhs, rhs]),
