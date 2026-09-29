@@ -1,26 +1,14 @@
+mod error;
+pub use error::{LexError, LexResult, ParseError, ParseResult};
+
 mod lex;
 use lex::Lexer;
-pub use lex::{LexError, Token};
+pub use lex::Token;
 
 mod parser;
 use parser::Parser;
 
 use crate::util::arena::{Arena, ArenaId};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseError {
-    LexError(LexError),
-    EmptyInput,
-    ExtraInput,
-    UnclosedList,
-    ExtraRparen,
-}
-
-impl From<LexError> for ParseError {
-    fn from(err: LexError) -> Self {
-        Self::LexError(err)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum AstNode {
@@ -37,8 +25,6 @@ pub struct Ast {
     pub nodes: Arena<AstNode>,
     pub root: AstNodeId,
 }
-
-pub type ParseResult<T> = Result<T, ParseError>;
 
 /// Parses the given text into an abstract syntax tree
 ///
@@ -99,7 +85,9 @@ mod tests {
         assert_eq!(parse(""), Err(ParseError::EmptyInput));
         assert_eq!(
             parse("\""),
-            Err(ParseError::LexError(LexError::UnterminatedString))
+            Err(ParseError::Lex {
+                source: LexError::UnterminatedString
+            })
         );
     }
 }

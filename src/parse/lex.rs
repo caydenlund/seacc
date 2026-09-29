@@ -1,14 +1,7 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LexError {
-    InvalidNumber(String),
-    InvalidStringEscape(char),
-    UnterminatedString,
-}
-
-pub type LexResult<T> = Result<T, LexError>;
+use crate::parse::{LexError, LexResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
@@ -67,13 +60,6 @@ impl<'s> Lexer<'s> {
         Ok(Some(Token { kind }))
     }
 
-    pub fn peek(&mut self) -> LexResult<Option<&TokenKind>> {
-        if self.next.is_none() {
-            self.next = self.next()?;
-        }
-        Ok(self.next.as_ref().map(|tok| &tok.kind))
-    }
-
     fn lex_string(&mut self) -> LexResult<TokenKind> {
         let lquote = self.cnext();
         debug_assert_eq!(lquote, Some('"'));
@@ -94,7 +80,7 @@ impl<'s> Lexer<'s> {
             Some('n') => Ok('\n'),
             Some('"') => Ok('"'),
             Some('\\') => Ok('\\'),
-            Some(ch) => Err(LexError::InvalidStringEscape(ch)),
+            Some(escape) => Err(LexError::InvalidStringEscape { escape }),
             None => Err(LexError::UnterminatedString),
         }
     }
@@ -104,7 +90,7 @@ impl<'s> Lexer<'s> {
         value
             .parse::<i64>()
             .map(TokenKind::Number)
-            .map_err(|_| LexError::InvalidNumber(value))
+            .map_err(|_| LexError::InvalidNumber { literal: value })
     }
 
     fn take_atom(&mut self) -> String {
@@ -182,9 +168,45 @@ mod tests {
     }
 
     #[test]
+    fn comments() {
+        assert_eq!(kinds(""), Ok(vec![]));
+        assert_eq!(kinds("; foo"), Ok(vec![]));
+        assert_eq!(kinds("; foo\n123\n; bar"), Ok(vec![TokenKind::Number(123)]));
+    }
+
+    #[test]
+    fn list() {
+        use TokenKind::{Lparen, Rparen, Symbol};
+        let sym = |s| Symbol(String::from(s));
+
+        assert_eq!(
+            kinds("a (b (c) d) e"),
+            Ok(vec![
+                sym("a"),
+                Lparen,
+                sym("b"),
+                Lparen,
+                sym("c"),
+                Rparen,
+                sym("d"),
+                Rparen,
+                sym("e")
+            ])
+        );
+    }
+
+    #[test]
     fn bad_literal() {
-        assert_eq!(kinds("12abc"), Err(LexError::InvalidNumber("12abc".into())));
+        assert_eq!(
+            kinds("12abc"),
+            Err(LexError::InvalidNumber {
+                literal: "12abc".into()
+            })
+        );
         assert_eq!(kinds("\"unterminated"), Err(LexError::UnterminatedString));
-        assert_eq!(kinds("\"\\q\""), Err(LexError::InvalidStringEscape('q')));
+        assert_eq!(
+            kinds("\"\\q\""),
+            Err(LexError::InvalidStringEscape { escape: 'q' })
+        );
     }
 }

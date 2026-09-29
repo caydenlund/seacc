@@ -3,34 +3,36 @@ use crate::parse::{Ast, AstNode, AstNodeId};
 use crate::util::arena::Arena;
 
 mod error;
-pub use error::LowerError;
+pub use error::{LowerError, LowerResult};
 
 /// Lowers the given [`Ast`] to the sea-of-nodes [`Graph`] representation
 ///
 /// # Errors
 /// If the abstract syntax tree has malformed Scheme constructs
-pub fn lower(Ast { nodes, root }: &Ast) -> Result<Graph, LowerError> {
+pub fn lower(Ast { nodes, root }: &Ast) -> LowerResult<Graph> {
     struct Context {
         nodes: Arena<AstNode>,
         start: NodeId,
     }
 
-    fn lower_rec(
-        context: &Context,
-        graph: &mut Graph,
-        node: AstNodeId,
-    ) -> Result<NodeId, LowerError> {
+    fn lower_rec(context: &Context, graph: &mut Graph, node: AstNodeId) -> LowerResult<NodeId> {
         match context.nodes.get(node) {
             Some(AstNode::Number(n)) => Ok(graph.add(NodeSpec::Constant(ir::Constant::Number(*n)))),
             Some(AstNode::String(_)) => todo!(),
-            Some(AstNode::Symbol(s)) => Err(LowerError::UnboundSymbol(s.clone())),
+            Some(AstNode::Symbol(symbol)) => Err(LowerError::UnboundSymbol {
+                symbol: symbol.clone(),
+            }),
             Some(AstNode::List(nodes)) => {
                 let Some((sym, args)) = nodes.split_first() else {
-                    return Err(LowerError::InvalidInvocation);
+                    return Err(LowerError::EmptyInvocation);
                 };
                 let sym = match context.nodes.get(*sym) {
                     Some(AstNode::Symbol(sym)) => sym,
-                    Some(_) => return Err(LowerError::InvalidInvocation),
+                    Some(callee) => {
+                        return Err(LowerError::NonSymbolCallee {
+                            callee: format!("{callee:?}"),
+                        });
+                    }
                     None => unreachable!(),
                 };
                 match (sym as &str, args.len()) {
@@ -43,7 +45,11 @@ pub fn lower(Ast { nodes, root }: &Ast) -> Result<Graph, LowerError> {
                         })
                     }
                     //
-                    ("/", 0) => Err(LowerError::WrongArity),
+                    ("/", actual) if actual < 1 => Err(LowerError::WrongArity {
+                        operator: sym.clone(),
+                        minimum: 1,
+                        actual,
+                    }),
                     ("/", 1) => todo!(),
                     ("/", 2..) => {
                         let lhs = lower_rec(context, graph, args[0])?;
@@ -64,7 +70,11 @@ pub fn lower(Ast { nodes, root }: &Ast) -> Result<Graph, LowerError> {
                     }
                     //
                     #[allow(clippy::match_same_arms)]
-                    ("-", 0) => Err(LowerError::WrongArity),
+                    ("-", actual) if actual < 1 => Err(LowerError::WrongArity {
+                        operator: sym.clone(),
+                        minimum: 1,
+                        actual,
+                    }),
                     ("-", 1) => {
                         let lhs = graph.add(NodeSpec::Constant(ir::Constant::Number(0)));
                         let rhs = lower_rec(context, graph, args[0])?;
@@ -77,7 +87,9 @@ pub fn lower(Ast { nodes, root }: &Ast) -> Result<Graph, LowerError> {
                             Ok(graph.add(NodeSpec::Sub(lhs, rhs)))
                         })
                     }
-                    _ => Err(LowerError::UnboundSymbol(sym.clone())),
+                    _ => Err(LowerError::UnboundSymbol {
+                        symbol: sym.clone(),
+                    }),
                 }
             }
             None => unreachable!(),
@@ -102,7 +114,7 @@ mod tests {
 
     use super::*;
 
-    fn lower(s: &str) -> Result<Graph, LowerError> {
+    fn lower(s: &str) -> LowerResult<Graph> {
         super::lower(&crate::parse::parse(s).unwrap())
     }
 
@@ -143,7 +155,7 @@ mod tests {
         serialize_rec(graph, val)
     }
 
-    fn lowstr(s: &str) -> Result<String, LowerError> {
+    fn lowstr(s: &str) -> LowerResult<String> {
         lower(s).map(|g| serialize(&g))
     }
 
@@ -151,15 +163,36 @@ mod tests {
     fn arith() {
         use LowerError::*;
         #[allow(clippy::unnecessary_wraps)]
-        fn ok(s: &str) -> Result<String, LowerError> {
+        fn ok(s: &str) -> LowerResult<String> {
             Ok(s.to_string())
         }
         assert_eq!(lowstr("123"), ok("123"));
 
         assert_eq!(lowstr("(*)"), ok("1"));
-        assert_eq!(lowstr("(/)"), Err(WrongArity));
+        assert_eq!(lowstr("()"), Err(EmptyInvocation));
+        assert_eq!(
+            lowstr("(1)"),
+            Err(NonSymbolCallee {
+                callee: "Number(1)".into(),
+            })
+        );
+        assert_eq!(
+            lowstr("(/)"),
+            Err(WrongArity {
+                operator: "/".into(),
+                minimum: 1,
+                actual: 0,
+            })
+        );
         assert_eq!(lowstr("(+)"), ok("0"));
-        assert_eq!(lowstr("(-)"), Err(WrongArity));
+        assert_eq!(
+            lowstr("(-)"),
+            Err(WrongArity {
+                operator: "-".into(),
+                minimum: 1,
+                actual: 0,
+            })
+        );
 
         assert_eq!(lowstr("(* 123)"), ok("123"));
         assert_eq!(lowstr("(+ 123)"), ok("123"));
