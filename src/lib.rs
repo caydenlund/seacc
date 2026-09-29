@@ -2,5 +2,6 @@
 
 pub mod ir;
 pub mod lower;
+pub mod opt;
 pub mod parse;
 pub mod util;

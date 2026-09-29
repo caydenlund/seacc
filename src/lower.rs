@@ -109,54 +109,17 @@ pub fn lower(Ast { nodes, root }: &Ast) -> LowerResult<Graph> {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::ir::{Node, NodeKind};
+pub mod tests {
+    use crate::ir::tests::serialize;
 
     use super::*;
 
-    fn lower(s: &str) -> LowerResult<Graph> {
+    pub fn lower(s: &str) -> LowerResult<Graph> {
         super::lower(&crate::parse::parse(s).unwrap())
     }
 
-    fn serialize(graph: &Graph) -> String {
-        fn serialize_rec(graph: &Graph, node: NodeId) -> String {
-            use NodeKind::*;
-            let Node { kind, inputs, .. } = graph.get(node).unwrap();
-            match kind {
-                Start | Return => unreachable!(),
-                Constant(ir::Constant::Number(n)) => n.to_string(),
-                Mul => format!(
-                    "({} * {})",
-                    serialize_rec(graph, inputs[0]),
-                    serialize_rec(graph, inputs[1])
-                ),
-                Div => format!(
-                    "({} / {})",
-                    serialize_rec(graph, inputs[0]),
-                    serialize_rec(graph, inputs[1])
-                ),
-                Mod => todo!(),
-                Add => format!(
-                    "({} + {})",
-                    serialize_rec(graph, inputs[0]),
-                    serialize_rec(graph, inputs[1])
-                ),
-                Sub => format!(
-                    "({} - {})",
-                    serialize_rec(graph, inputs[0]),
-                    serialize_rec(graph, inputs[1])
-                ),
-            }
-        }
-
-        let start = graph.get(graph.start()).unwrap();
-        let ret = graph.get(start.outputs[0]).unwrap();
-        let val = ret.inputs[1];
-        serialize_rec(graph, val)
-    }
-
     fn lowstr(s: &str) -> LowerResult<String> {
-        lower(s).map(|g| serialize(&g))
+        lower(s).map(|g| serialize(&g).expect("unable to serialize graph"))
     }
 
     #[test]

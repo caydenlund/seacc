@@ -1,43 +1,10 @@
-use crate::util::arena::{Arena, ArenaId};
+use crate::util::arena::Arena;
 
-#[derive(Debug, Clone)]
-pub enum Constant {
-    Number(i64),
-}
+mod error;
+pub use error::{GraphError, GraphResult};
 
-#[derive(Debug, Clone)]
-pub enum NodeKind {
-    Start,
-    Return,
-
-    Constant(Constant),
-    Mul,
-    Div,
-    Mod,
-    Add,
-    Sub,
-}
-
-#[derive(Debug, Clone)]
-pub enum NodeSpec {
-    Return(NodeId, NodeId),
-
-    Constant(Constant),
-    Mul(NodeId, NodeId),
-    Div(NodeId, NodeId),
-    Mod(NodeId, NodeId),
-    Add(NodeId, NodeId),
-    Sub(NodeId, NodeId),
-}
-
-#[derive(Debug, Clone)]
-pub struct Node {
-    pub kind: NodeKind,
-    pub inputs: Vec<NodeId>,
-    pub outputs: Vec<NodeId>,
-}
-
-pub type NodeId = ArenaId<Node>;
+mod node;
+pub use node::{Constant, Node, NodeId, NodeKind, NodeSpec};
 
 #[derive(Clone)]
 pub struct Graph {
@@ -89,8 +56,8 @@ impl Graph {
             inputs: inputs.to_vec(),
             outputs: Vec::new(),
         });
-        for &input in inputs {
-            self.nodes.get_mut(input).unwrap().outputs.push(id);
+        for (idx, &input) in inputs.iter().enumerate() {
+            self.nodes.get_mut(input).unwrap().outputs.push((idx, id));
         }
         id
     }
@@ -105,5 +72,72 @@ impl Graph {
     #[allow(private_bounds)]
     pub fn get_mut(&mut self, id: NodeId) -> Option<&mut Node> {
         self.nodes.get_mut(id)
+    }
+
+    pub fn replace_uses(&mut self, old_id: NodeId, new_id: NodeId) -> GraphResult<()> {
+        let err = |id| GraphError::MissingNode { id };
+        let old = self.nodes.get_mut(old_id).ok_or_else(|| err(old_id))?;
+        let outputs: Vec<_> = old.outputs.drain(0..).collect();
+
+        let new = self.nodes.get_mut(new_id).ok_or_else(|| err(new_id))?;
+        new.outputs.extend(&outputs);
+
+        for (idx, id) in outputs {
+            self.get_mut(id).ok_or_else(|| err(id))?.inputs[idx] = new_id;
+        }
+
+        Ok(())
+    }
+
+    pub fn kill_if_unused(&mut self, id: NodeId) -> GraphResult<()> {
+        let node = self.nodes.get(id).ok_or(GraphError::MissingNode { id })?;
+
+        if node.outputs.is_empty() {
+            self.nodes.remove(id);
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[must_use]
+    pub fn serialize(graph: &Graph) -> GraphResult<String> {
+        fn serialize_rec(graph: &Graph, id: NodeId) -> GraphResult<String> {
+            use NodeKind::*;
+            let Node { kind, inputs, .. } = graph.get(id).ok_or(GraphError::MissingNode { id })?;
+            Ok(match kind {
+                Start => unreachable!(),
+                Return => serialize_rec(graph, inputs[1])?,
+                Constant(super::Constant::Number(n)) => n.to_string(),
+                Mul => format!(
+                    "({} * {})",
+                    serialize_rec(graph, inputs[0])?,
+                    serialize_rec(graph, inputs[1])?
+                ),
+                Div => format!(
+                    "({} / {})",
+                    serialize_rec(graph, inputs[0])?,
+                    serialize_rec(graph, inputs[1])?
+                ),
+                Mod => todo!(),
+                Add => format!(
+                    "({} + {})",
+                    serialize_rec(graph, inputs[0])?,
+                    serialize_rec(graph, inputs[1])?
+                ),
+                Sub => format!(
+                    "({} - {})",
+                    serialize_rec(graph, inputs[0])?,
+                    serialize_rec(graph, inputs[1])?
+                ),
+            })
+        }
+
+        let start = graph.get(graph.start()).unwrap();
+        serialize_rec(graph, start.outputs[0].1)
     }
 }
